@@ -1,5 +1,5 @@
 
-const BASE_URL = "http://localhost:8080"
+const BASE_URL = "http://localhost:8000"
 async function fetchFileList(params) {
     
     if (params.path === '/' && params.type === '' && params.sort === '' && params.order === 'down') { // 返回保存目录下的所有文件列表，默认所有类型，默认是order是down，sort 是空

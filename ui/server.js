@@ -1,5 +1,5 @@
 function connectSSE() {
-    let eventSource = new EventSource("http://localhost:8080/sse/event");
+    let eventSource = new EventSource("http://localhost:8000/sse/event");
 
     eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data)

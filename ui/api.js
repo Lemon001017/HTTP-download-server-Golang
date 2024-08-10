@@ -1,5 +1,5 @@
 // const BASE_URL = "http://118.25.40.30:8081"
-const BASE_URL = "http://localhost:8080"
+const BASE_URL = "http://localhost:8000"
 // 设置页面 api
 async function fetchSettings() {
     const response = await fetch(`${BASE_URL}/api/settings/get`);
@@ -9,7 +9,7 @@ async function fetchSettings() {
 
 // 保存设置
 async function saveSettings(params) {
-    const resp = await fetch(`${BASE_URL}/api/settings/save`, {
+    const resp = await fetch(`${BASE_URL}/api/settings/update`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"

@@ -1,5 +1,5 @@
 // const BASE_URL = "http://118.25.40.30:8081"
-const BASE_URL = "http://localhost:8080"
+const BASE_URL = "http://localhost:8000"
 async function fetchTasks(params) {
 
     const resp = await fetch(`${BASE_URL}/api/task/get_tasks`, {
