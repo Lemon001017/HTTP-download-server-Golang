@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasks</title>
+    <script src="./assets/tailwind-3.3.2.js"></script>
+    <script type="module" src="./assets/alpine.min.js"></script>
+    <script nomodule src="./assets/alpine-ie11.min.js" defer></script>
+    <script src="./taskApi.js"></script>
+    <!-- <script src="./server.js"></script> -->
+</head>
+
+<script>
+    var globalData;
+    function initTasks() {
+        //connectSSE()
+        globalData = {
+            pos: 0,
+            limit: 5,
+            currentPage: 1,
+            downloadPath: '',
+            timeDiff: '',
+            tasks: {},
+            taskData: [],
+            checkValue: [],
+            optionValue: 'ALL',
+            runningTask: [],
+            showModal: false,
+            showPause: false,
+            ids: [],
+            currentPageColor: '',
+            showAlert: false,
+
+            async initData() {
+                this.currentPageColor = document.body.getAttribute('data-page-type')
+                this.fetchData()
+                this.connectSSE()
+            },
+            async connectSSE() {
+                let eventSource = new EventSource("http://118.25.40.30:8081/sse/event");
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    const index = this.taskData.findIndex(t => t.id === data.downloadTaskId);
+                    if (index !== -1) {
+                        this.taskData[index].progress = data.progress;
+                        this.taskData[index].downloadSpeed = data.downloadSpeed;
+                        this.taskData[index].status = data.status;
+                        this.taskData[index].remainingTime = data.remainingTime;
+                    }
+                }
+                eventSource.onopen = () => {
+                    console.log('sse连接成功');
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error(`SSE 连接错误`, error);
+                    eventSource.close();
+                };
+            },
+
+            async fetchData() {
+                let data = {
+                    pos: this.pos,
+                    limit: this.limit,
+                    currentPage: this.currentPage,
+                    status: this.optionValue,
+
+                }
+                const resp = await fetchTasks(data)
+                console.log(resp)
+                this.tasks = resp
+                this.taskData = resp?.items
+            },
+            async submitData(path) {
+                const resp = await submitDownloadPath(path)
+                if (resp) {
+                    this.showAlert = true
+                    setTimeout(() => {
+                        this.showAlert = false
+                    }, 2000);
+                }
+                await this.fetchData()
+            },
+            async refresh(ids) {
+                let result = [];
+                for (let i = 0; i < ids.length; i++) {
+                    result.push(ids[i]);
+                }
+                await fetchTaskInfo(result)
+                this.checkValue = []
+                await this.fetchData()
+
+            },
+            // 下面这部分 要是多选的时候，每一个的状态都要发生变化，用sse去获取每一个的状态
+            async pauseTaskDownload(ids) {
+                if (ids.length === 0) {
+                    return
+                } else {
+                    let result = [];
+                    for (let i = 0; i < ids.length; i++) {
+                        result.push(ids[i]);
+                    }
+                    await pauseTask(result)
+                    this.checkValue = []
+                    this.showPause = true
+                    await this.fetchData()
+                }
+            },
+            async resumeTaskDownload(ids) {
+                if (ids.length !== 0) {
+                    let result = [];
+                    for (let i = 0; i < ids.length; i++) {
+                        result.push(ids[i]);
+                    }
+                    await resumeTask(result)
+                    this.checkValue = []
+                    this.showPause = false
+                    await this.fetchData()
+                }
+            },
+            async handleDelete(ids) {
+                if (!ids) {
+                    return
+                }
+                let result = [];
+                for (let i = 0; i < ids.length; i++) {
+                    result.push(ids[i]);
+                }
+                this.showModal = true
+                this.ids = result
+            },
+            async removeTask(ids) {
+                if (ids.length !== 0) {
+                    let result = [];
+                    for (let i = 0; i < ids.length; i++) {
+                        result.push(ids[i]);
+                    }
+                    await deleteTask(result)
+                    this.showModal = false
+                    this.checkValue = []
+                    await this.fetchData()
+                }
+            },
+            async filterTask(optionValue) {
+                this.pos = 0
+                this.limit = 5
+                this.currentPage = 1
+                this.optionValue = optionValue
+                let data = {
+                    pos: this.pos,
+                    limit: this.limit,
+                    currentPage: this.currentPage,
+                    status: this.optionValue
+                }
+                if (optionValue === 'All') {
+                    await this.fetchData()
+                    // async function fetchFilterTasks(filter, pos, limit, currentPage)
+                } else {
+                    let result = await fetchTasks(data);
+
+                    this.tasks = result
+                    //this.taskData = result.items || []
+                    this.taskData = result?.items
+                }
+            },
+            async toNextPage() {
+
+                this.currentPage++
+                this.pos = (this.currentPage - 1) * this.limit
+                await this.fetchData()
+
+            },
+            async toPrevPage() {
+                this.currentPage--
+                this.pos = (this.currentPage - 1) * this.limit
+                await this.fetchData()
+            },
+            async handlThreads(task, type) {
+                if (type === 'up') {
+                    task.threads++
+                } else {
+                    if (task.threads === 1) {
+                        return
+                    } else {
+                        task.threads--
+                    }
+                }
+                let data = {
+                    id: task.id,
+                    threads: task.threads
+                }
+                try {
+                    await changeThreads(data)
+                } catch (error) {
+
+                }
+            },
+            handleTime(seconds) {
+                if (seconds) {
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = seconds % 60;
+                    const hours = Math.floor(minutes / 60);
+                    const remainingMinutes = minutes % 60;
+
+                    if (hours > 0) {
+                        return `${hours}时${remainingMinutes}分${Math.ceil(remainingSeconds)}秒`;
+                    } else if (minutes > 0) {
+                        return `${minutes}分${Math.ceil(remainingSeconds)}秒`;
+                    } else {
+                        return `${Math.ceil(seconds)}秒`;
+                    }
+                }
+            },
+            handleSize(size) {
+                if (size <= 1024) {
+                    return size + 'B'
+                } else if (size <= 1024 * 1024) {
+                    return (size / 1024).toFixed(2) + 'KB'
+                } else if (size <= 1024 * 1024 * 1024) {
+                    return (size / 1024 / 1024).toFixed(2) + 'MB'
+                } else {
+                    return (size / 1024 / 1024 / 1024).toFixed(2) + 'GB'
+                }
+            }
+        }
+        return globalData;
+    }
+</script>
+
+<body data-page-type="task" x-data="initTasks()" x-init="initData()">
+    <div class="w-full h-full bg-gray-50 relative">
+        <div class="w-full bg-gray-900 py-4  text-white">
+            <p class="max-w-7xl flex mx-auto font-semibold text-left  px-6 xl:px-0"> Download Server</p>
+        </div>
+        <div class="lg:flex max-w-7xl mx-auto py-10 pl-4 pr-10  bg-white">
+            <div class="lg:flex-none lg:space-x-0  lg:border-r lg:space-y-4 lg:h-[calc(100vh-10rem)]">
+                <a href="./index.html"
+                    class="flex items-center space-x-2 hover:text-indigo-700  cursor-pointer p-2  lg:px-4  rounded-l hover:bg-opacity-90 border-l-4 border-transparent">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                        stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                    </svg>
+                    <span> File</span>
+                </a>
+                <a href="./tasks.html"
+                    class="flex items-center space-x-2 p-2 px-4 rounded-l hover:bg-opacity-90 cursor-pointer border-l-4"
+                    :class="currentPageColor==='task' && 'bg-yellow-400  border-yellow-500'">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                        stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 9.75v6.75m0 0l-3-3m3 3l3-3m-8.25 6a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                    </svg>
+                    <span class="w-20"> Transfers</span>
+                </a>
+
+                <a href="./setting.html"
+                    class="flex items-center space-x-2 hover:text-indigo-700 cursor-pointer p-2 lg:px-4 rounded-l border-l-4 border-transparent">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                        stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span> Settings</span>
+                </a>
+            </div>
+            <div class="space-y-8 w-full flex-grow pl-10">
+                <div class="flex w-full items-center space-x-4">
+                    <input type="text" placeholder="http file link to download" x-model="downloadPath"
+                        class="flex-grow rounded">
+                    <button
+                        class="bg-gradient-to-br from-blue-500 to-sky-400 px-6 py-1.5 text-white rounded-full shadow"
+                        @click="submitData(downloadPath)">Submit
+                    </button>
+                </div>
+
+                <div class="flex items-center justify-between mt-10">
+                    <div class="flex space-x-10 items-center">
+                        <select name="" id="" class="h-10 rounded capitalize" x-model="optionValue"
+                            @change="filterTask(optionValue)">
+                            <option value="ALL">All</option>
+                            <option value="Downloaded"> Downloaded</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Canceled">Canceled</option>
+                            <option value="Downloading">Downloading</option>
+                        </select>
+                    </div>
+
+                    <template x-if="checkValue.length">
+                        <div class="flex items-center space-x-3 text-gray-500">
+                            <div class="space-x-3 flex items-center">
+                                <span x-text="checkValue.length"> </span><span>items</span>
+                            </div>
+
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-6 h-6 cursor-pointer hover:text-indigo-600"
+                                @click="refresh(checkValue)">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                            </svg>
+
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-6 h-6 cursor-pointer hover:text-green-600"
+                                @click="resumeTaskDownload(checkValue)">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z" />
+                            </svg>
+
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-6 h-6 cursor-pointer hover:text-green-600"
+                                @click="pauseTaskDownload(checkValue)">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M14.25 9v6m-4.5 0V9M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-6 h-6 cursor-pointer hover:text-red-600"
+                                @click="handleDelete(checkValue)">
+                                <path stroke-linecap="round" stroke-linejoin="round "
+                                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                        </div>
+                    </template>
+                </div>
+                <div class="border-t my-4 w-full"></div>
+                <template x-for="task in taskData" :key="task.id" >
+                    <div class="flex items-center space-x-6">
+                        <input type="checkbox" class="rounded" :value="task.id" x-model="checkValue">
+                        <div class="bg-gray-50 shadow-md rounded-md flex w-full items-center p-3 py-5 space-x-4 group">
+                            <template x-if="task.type==='http'">
+                                <p class="font-semibold text-lg text-green-600">HTTP</p>
+                            </template>
+                            <div class="w-full">
+                                <div class="flex items-center justify-between text-gray-500 w-full">
+                                    <p x-text="task.name"></p>
+                                    <div class="space-y-2">
+                                        <template x-if="task.threads">
+                                            <div class="flex items-center text-gray-800 ml-2">
+                                                <p class="cursor-pointer" @click="handlThreads(task,'desc')">-</p>
+                                                <p class="mx-3 underline" x-text="task.threads"></p>
+                                                <p class="cursor-pointer" @click="handlThreads(task,'up')">+</p>
+                                            </div>
+                                        </template>
+
+                                    </div>
+
+                                    <div class="flex items-center space-x-3 invisible group-hover:visible">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                            stroke-width="1.5" stroke="currentColor"
+                                            class="w-6 h-6 cursor-pointer hover:text-indigo-600"
+                                            @click="refresh([task.id])">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                        </svg>
+                                        <template x-if="task.status==='Downloading'">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                stroke-width="1.5" stroke="currentColor"
+                                                class="w-6 h-6 cursor-pointer hover:text-indigo-600"
+                                                @click="pauseTaskDownload([task.id])">
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    d="M14.25 9v6m-4.5 0V9M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </template>
+                                        <template x-if="task.status !='Downloading'">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                stroke-width="1.5" stroke="currentColor"
+                                                class="w-6 h-6 cursor-pointer hover:text-indigo-600"
+                                                @click="resumeTaskDownload([task.id])">
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z" />
+                                            </svg>
+                                        </template>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                            stroke-width="1.5" stroke="currentColor"
+                                            class="w-6 h-6 cursor-pointer hover:text-indigo-600"
+                                            @click="handleDelete([task.id])">
+                                            <path stroke-linecap="round" stroke-linejoin="round "
+                                                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <template x-if="task.progress>0 && task.progress < 100">
+                                    <div id="taskProgress" class="bg-gray-100 w-full h-2 relative rounded-full mt-3">
+                                        <div class="bg-teal-500 h-2 rounded-full" :style="`width: ${task.progress}%`">
+                                        </div>
+                                        <p x-text="`${task.progress}%`"
+                                            class="absolute right-2 text-sm text-teal-600 top-2">
+                                        </p>
+                                    </div>
+                                </template>
+
+                                <div class="flex items-center justify-between mt-5">
+                                    <div class="flex items-center">
+                                        <!-- <template  x-if="task.downloadSpeed"> -->
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-teal-500">
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    d="M15.75 17.25L12 21m0 0l-3.75-3.75M12 21V3" />
+                                            </svg>
+                                            <span x-text="task.downloadSpeed"></span>
+                                            <span class="mx-2 text-gray-600">/</span>
+                                        <!-- </template> -->
+                                        <span x-text="task?.size"></span>
+                                    </div>
+
+                                    <div class="flex">
+                                        <template
+                                            x-if="task.status ==='Canceled' || task.status ==='Pending'">
+                                            <span x-text="task.status" class="capitalize"></span>
+                                        </template>
+
+                                        <template x-if="task.status ==='Downloading'">
+                                            <div class="flex items-center space-x-2">
+                                                <span>Remaining</span>
+                                                <span x-text="handleTime(Math.floor(task.remainingTime))"></span>
+                                            </div>
+                                        </template>
+
+                                        <template x-if="task.status ==='Downloaded'">
+                                            <div class="flex items-center space-x-2">
+                                                <span>Downloaded</span>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <div class=" space-x-1 flex">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                            stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-500">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+
+                                        <p x-text="new Date(task?.gmtCreated).toLocaleString()"
+                                            class="text-sm text-gray-500"></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="tasks.total">
+                    <div class="flex items-center">
+                        <div>total: <span x-text="tasks.total" class="font-semibold pr-4"></span></div>
+                        <template x-if="Math.ceil(tasks.total/limit)>=2">
+                            <div class="flex items-center justify-center space-x-6">
+                                <div class="px-3 py-1 border rounded-md bg-gray-50 cursor-pointer" @click="toPrevPage()"
+                                    :class="[currentPage===1?'pointer-events-none':'']">Prev
+                                </div>
+                                <p class="flex items-center space-x-1">
+                                    <span x-text="currentPage"> </span> /
+                                    <span x-text="Math.ceil(tasks.total/limit)"></span>
+                                </p>
+                                <div class="px-3 py-1 border rounded-md bg-gray-50 cursor-pointer" @click="toNextPage()"
+                                    :class="[currentPage>=(Math.ceil(taskss.total/limit))?'pointer-events-none':'']">
+                                    Next
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <template x-if="showModal">
+                    <div
+                        class="fixed -top-0 left-0 w-full h-full -bottom-20 bg-gray-800 bg-opacity-50 flex justify-center items-center text-white">
+                        <div class="bg-white rounded-xl p-10 text-gray-900 space-y-6 ">
+                            <p class="font-semibold text-lg">确定要删除<span x-text="ids"
+                                    class="text-gray-500 font-medium mx-1"></span>任务吗？
+                            </p>
+                            <div class="flex items-center justify-end space-x-4">
+                                <button class="font-semibold text-white bg-red-500 px-4 py-1 rounded-md"
+                                    @click="removeTask(ids)"> 确认
+                                </button>
+                                <button class="font-semibold text-gray-900 border px-4 py-1 rounded-md"
+                                    @click="showModal=false"> 取消
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+        </div>
+
+    <template x-if="showAlert">
+        <div
+                class="fixed flex right-10 top-12 rounded-lg bg-teal-50 shadow-xl text-teal-500 font-semibold border border-teal-200">
+            <div class="relative flex py-2 px-2">
+                <p class="text-lg px-10">submit success !</p>
+                <p class="text-gray-500 hover:cursor-pointer hover:text-gray-900" @click="showAlert=false">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
+                        <path fill="currentColor"
+                              d="m8.401 16.333l-.734-.727l3.6-3.606l-3.6-3.58l.734-.728l3.6 3.596l3.573-3.596l.734.727l-3.6 3.58l3.6 3.607l-.734.727L12 12.737z" />
+                    </svg>
+                </p>
+            </div>
+        </div>
+    </template>
+</body>
+
+</html>

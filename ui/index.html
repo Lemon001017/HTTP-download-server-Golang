@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File</title>
+    <script src="./assets/tailwind-3.3.2.js"></script>
+    <script type="module" src="./assets/alpine.min.js"></script>
+    <script nomodule src="./assets/alpine-ie11.min.js" defer></script>
+    <script src="./api.js"></script>
+    <script>
+        function initFile() {
+            var originPath = '/'
+            return {
+                files: [],
+                optionValue: '',
+                filePath: [''],
+                sort: '',
+                order: 'up',
+                currentPageColor: '',
+                async initData() {
+                    this.currentPageColor = document.body.getAttribute('data-page-type')
+                    this.fetchList()
+                },
+                async fetchList(paths, type, sort, order) {
+                    order = (this.order === 'up' ? 'down' : 'up')
+                    console.log('order', order)
+                    let path = '';
+                    if (paths) {
+                        for (let i = 0; i < paths.length; i++) {
+                            path = paths.join('/')
+                        }
+                    }
+                    if (type) {
+                        this.optionValue = type
+                    }
+                    if (sort) {
+                        this.sort = sort
+                    }
+                    let data = {
+                        type: this.optionValue,
+                        sort: this.sort,
+                        order: this.order
+                    }
+                    this.files = await fetchFileList(data, path)
+                },
+                async goFile(file) {
+                    if (file) {
+                        originPath += '/' + file.fileName
+                        let data = {
+                            type: this.optionValue,
+                            sort: this.sort,
+                            order: this.order
+                        }
+                        file.children = await fetchFileList(data, originPath)
+                        console.log('file.children', file.children)
+                        if (file.children) {
+                            this.filePath.push(file.fileName)
+                            this.files = file.children
+                        }
+                    } else {
+                        this.filePath.push(file.path)
+                    }
+                },
+                async goBack(path) {
+                    const index = this.filePath.indexOf(path)
+                    this.filePath.splice(index + 1)
+                    if (this.filePath) {
+                        for (let i = 0; i < this.filePath.length; i++) {
+                            path = this.filePath.join('/')
+                        }
+                    }
+                    let data = {
+                        type: this.optionValue,
+                        sort: this.sort,
+                        order: this.order
+                    }
+                    originPath = path
+                    this.files = await fetchFileList(data, path)
+                },
+                handleSize(size) {
+                    if (size <= 1024) {
+                        return size + 'B'
+                    } else if (size <= 1024 * 1024) {
+                        return (size / 1024).toFixed(2) + 'KB'
+                    } else if (size <= 1024 * 1024 * 1024) {
+                        return (size / 1024 / 1024).toFixed(2) + 'MB'
+                    } else {
+                        return (size / 1024 / 1024 / 1024).toFixed(2) + 'GB'
+                    }
+                },
+            }
+        }
+    </script>
+
+</head>
+
+<body x-data="initFile()" x-init="initData" data-page-type="file" class="bg-gray-50">
+    <div class="w-full bg-gray-900 py-4  text-white">
+        <p class="max-w-7xl flex mx-auto font-semibold text-left px-6 xl:px-0"> Download Server</p>
+    </div>
+    <div class="flex max-w-7xl mx-auto py-10 pl-4 pr-10  bg-white relative">
+        <div class="lg:border-r space-y-4 h-[calc(100vh-10rem)]">
+            <a href="./index.html"
+                class="flex items-center space-x-2  cursor-pointer p-2  lg:px-4 rounded-l hover:bg-opacity-90 border-l-4"
+                :class="currentPageColor==='file' && 'bg-yellow-400 border-yellow-500'">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                </svg>
+                <span class="w-20"> File</span>
+            </a>
+            <a href="./tasks.html"
+                class="flex items-center space-x-2 hover:text-indigo-700 cursor-pointer p-2  lg:px-4 rounded-l border-l-4 border-transparent">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M12 9.75v6.75m0 0l-3-3m3 3l3-3m-8.25 6a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                </svg>
+                <span> Transfers</span>
+            </a>
+
+            <a href="./setting.html"
+                class="flex items-center space-x-2 hover:text-indigo-700 cursor-pointer p-2  lg:px-4 rounded-l border-l-4 border-transparent">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span> Settings</span>
+            </a>
+        </div>
+        <div class="space-y-10 w-full flex-grow pl-10">
+            <div class="flex items-center justify-between w-full px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center space-x-1">
+                    <template x-if="filePath.length>0">
+                        <template x-for="item in filePath">
+                            <div class="flex items-center space-x-1">
+                                <p class="text-xl -mt-4 cursor-pointer hover:text-indigo-600" x-text="item"
+                                    @click="goBack(item)"></p>
+                                <p class="text-xl -mt-4 cursor-pointer hover:text-indigo-600">/</p>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+                <select x-model="optionValue" @change="fetchList(filePath,optionValue)" class="rounded-md">
+                    <option value="">All(*.*)</option>
+                    <option value="Video">Video(*.mp4;*.mov)</option>
+                    <option value="Jpg">Photo(*.png;*.jpg;*.gif)</option>
+                    <option value="Archive">Archive(*.zip;*.rar;*.tar)</option>
+                    <option value="Document">Document(*.pptx;*.docx;*.xlsx)</option>
+                </select>
+            </div>
+            <div class="px-4 sm:px-6 lg:px-8">
+                <div class="mt-8 flow-root">
+                    <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+                        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+                            <table class="min-w-full divide-y divide-gray-300">
+                                <thead>
+                                    <tr>
+                                        <th scope="col"
+                                            class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">
+                                            <div class="flex items-center cursor-pointer"
+                                                @click="fetchList(filePath,undefined,'name','up')">
+                                                <p>File name</p>
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                    stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                                                </svg>
+                                            </div>
+                                        </th>
+                                        <th scope="col"
+                                            class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                            <div class="flex items-center cursor-pointer"
+                                                @click="fetchList(filePath,undefined,'size','up')">
+                                                <p>Size</p>
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                    stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                                                </svg>
+                                            </div>
+                                        </th>
+                                        <th scope="col"
+                                            class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                            <div class="flex items-center cursor-pointer"
+                                                @click="fetchList(filePath,undefined,'gmtCreated','up')">
+                                                <p>Create time</p>
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                    stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                                                </svg>
+                                            </div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 max-h-[calc(100vh-15rem)] overflow-y-auto">
+                                    <template x-for="file in files" :key="file">
+                                        <tr>
+                                            <td
+                                                class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-800 sm:pl-0">
+                                                <div class="flex items-center space-x-2 cursor-pointer w-auto hover:text-indigo-600"
+                                                    @click="goFile(file)">
+                                                    <template x-if="file.children">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                                            viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
+                                                            class="w-6 h-6 text-yllow-400 hover:text-yellow-500">
+                                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                                d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                                                        </svg>
+                                                    </template>
+                                                    <p x-text="file.fileName"></p>
+                                                </div>
+                                            </td>
+                                            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                <template x-if="!file.directory">
+                                                    <p x-text="(file.fileSize)"></p>
+                                                </template>
+                                            </td>
+                                            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"
+                                                x-text="(file.gmtModified).slice(0,10)"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</body>
+
+</html>

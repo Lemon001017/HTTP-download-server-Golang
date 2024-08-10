@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setting</title>
+    <script src="./assets/tailwind-3.3.2.js"></script>
+    <script type="module" src="./assets/alpine.min.js"></script>
+    <script nomodule src="./assets/alpine-ie11.min.js" defer></script>
+    <script src="./api.js"></script>
+
+    <script>
+        function initSetting() {
+            return {
+                settings: {},
+                currentPageColor: "",
+                showAlert: false,
+                async fetchData() {
+                    this.currentPageColor = document.body.getAttribute('data-page-type')
+                    this.settings = await fetchSettings()
+                },
+
+                async saveData() {
+                    let data = {
+                        downloadPath: this.settings.downloadPath,
+                        maxTasks: this.settings.maxTasks,
+                        maxDownloadSpeed: this.settings.maxDownloadSpeed,
+                        maxUploadSpeed: this.settings.maxUploadSpeed,
+                    }
+                    const resp = await saveSettings(data)
+                    if (resp) {
+                        this.showAlert = true
+                        setTimeout(() => {
+                            this.showAlert = false
+                        }, 2000);
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body data-page-type="setting" x-data="initSetting()" x-init="fetchData()"
+    class="bg-gray-50 h-screen overflow-y-hidden relative">
+    <div class="w-full bg-gray-900 py-4  text-white">
+        <p class="max-w-7xl flex mx-auto font-semibold text-left  px-6 xl:px-0"> Download Server</p>
+    </div>
+    <div class="flex max-w-7xl mx-auto py-10 pl-4 pr-10 bg-white">
+        <div class="border-r space-y-4 h-[calc(100vh-10rem)]">
+            <a href="./index.html"
+                class="flex items-center space-x-2  cursor-pointer py-2 px-4 rounded-l hover:bg-opacity-90 hover:text-indigo-700 border-l-4 border-transparent">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                </svg>
+                <span> File</span>
+            </a>
+            <a href="./tasks.html"
+                class="flex items-center space-x-2 py-2 px-4 rounded-l hover:text-indigo-700 hover:bg-opacity-90 cursor-pointer border-l-4 border-transparent">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M12 9.75v6.75m0 0l-3-3m3 3l3-3m-8.25 6a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                </svg>
+                <span> Transfers</span>
+            </a>
+
+            <a href="./setting.html" class="flex items-center space-x-2  cursor-pointer py-2 px-4 rounded-l"
+                :class="currentPageColor==='setting' && 'bg-yellow-400 border-l-4 border-yellow-500'">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span class="w-20"> Settings</span>
+            </a>
+        </div>
+        <div class="space-y-10 w-full flex-grow pl-10">
+            <div class="text-gray-700 w-full space-y-2">
+                <p class="text-lg font-semibold">Download Path</p>
+                <input type="text" placeholder="/data/downloads" x-model="settings.downloadPath"
+                    class="flex-grow rounded mt-2 w-1/2">
+            </div>
+            <div class="text-gray-700 w-full space-y-2">
+                <div class="flex items-center space-x-6">
+                    <p class="text-lg font-semibold">Max Tasks </p>
+                    <p>Allow maximum task parallelism</p>
+                </div>
+                <input type="number" placeholder="1" x-model="settings.maxTasks" class="rounded mt-2 w-40">
+            </div>
+
+            <div class="text-gray-700 w-full space-y-2">
+                <div class="flex items-center space-x-6">
+                    <span class="font-semibold">Max Download Speed </span>
+                    <span class="text-base text-gray-700">0 not limit</span>
+                </div>
+                <div class="flex items-center space-x-2 ">
+                    <input type="number" placeholder="1" x-model="settings.maxDownloadSpeed" class="rounded mt-2 w-40">
+                    <p> Mb/s</p>
+                </div>
+            </div>
+
+
+            <div class="text-gray-700 w-full space-y-2">
+                <div class="flex items-center space-x-6">
+                    <span class="font-semibold">Max Upload Speed </span>
+                    <span class="text-base text-gray-700">0 not limit</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="number" placeholder="1" x-model="settings.maxUploadSpeed" class="rounded mt-2 w-40">
+                    <p>Mb/s</p>
+                </div>
+            </div>
+            <div @click="saveData"
+                class="bg-gradient-to-br from-blue-500 to-sky-400 text-white px-6 py-2 rounded-full w-40 h-auto text-center cursor-pointer hover:shadow-md hover:bg-opacity-90">
+                Save
+                Setting</div>
+        </div>
+    </div>
+    <template x-if="showAlert">
+        <div
+            class="fixed flex right-10 top-12 rounded-lg bg-teal-50 shadow-xl text-teal-500 font-semibold border border-teal-200">
+            <div class="relative flex py-2 px-2">
+                <p class="text-lg px-10">save success !</p>
+                <p class="text-gray-500 hover:cursor-pointer hover:text-gray-900" @click="showAlert=false">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
+                        <path fill="currentColor"
+                            d="m8.401 16.333l-.734-.727l3.6-3.606l-3.6-3.58l.734-.728l3.6 3.596l3.573-3.596l.734.727l-3.6 3.58l3.6 3.607l-.734.727L12 12.737z" />
+                    </svg>
+                </p>
+            </div>
+        </div>
+    </template>
+</body>
+</html>
