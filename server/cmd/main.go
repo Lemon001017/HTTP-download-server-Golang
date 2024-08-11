@@ -2,6 +2,7 @@ package main
 
 import (
 	httpDownloadServer "HTTP-download-server/server"
+	"HTTP-download-server/server/models"
 	"flag"
 	"fmt"
 	"io"
@@ -99,7 +100,10 @@ func main() {
 		panic(err)
 	}
 
-	// Init Database
+	if err = models.Migration(db); err != nil {
+		panic(err)
+	}
+
 	if runMigration {
 		log.Println("migration done")
 		return

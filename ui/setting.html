@@ -27,7 +27,6 @@
                         downloadPath: this.settings.downloadPath,
                         maxTasks: this.settings.maxTasks,
                         maxDownloadSpeed: this.settings.maxDownloadSpeed,
-                        maxUploadSpeed: this.settings.maxUploadSpeed,
                     }
                     const resp = await saveSettings(data)
                     if (resp) {
@@ -104,21 +103,10 @@
                 </div>
             </div>
 
-
-            <div class="text-gray-700 w-full space-y-2">
-                <div class="flex items-center space-x-6">
-                    <span class="font-semibold">Max Upload Speed </span>
-                    <span class="text-base text-gray-700">0 not limit</span>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <input type="number" placeholder="1" x-model="settings.maxUploadSpeed" class="rounded mt-2 w-40">
-                    <p>Mb/s</p>
-                </div>
-            </div>
             <div @click="saveData"
                 class="bg-gradient-to-br from-blue-500 to-sky-400 text-white px-6 py-2 rounded-full w-40 h-auto text-center cursor-pointer hover:shadow-md hover:bg-opacity-90">
-                Save
-                Setting</div>
+                Save Setting
+            </div>
         </div>
     </div>
     <template x-if="showAlert">

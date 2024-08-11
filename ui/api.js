@@ -1,15 +1,14 @@
-// const BASE_URL = "http://118.25.40.30:8081"
 const BASE_URL = "http://localhost:8000"
-// 设置页面 api
+// get settings
 async function fetchSettings() {
-    const response = await fetch(`${BASE_URL}/api/settings`);
-    return (await response.json())["data"];
+    const response = await fetch(`${BASE_URL}/api/settings/1`);
+    return (await response.json());
 }
 
 
-// 保存设置
+// save settings
 async function saveSettings(params) {
-    const resp = await fetch(`${BASE_URL}/api/settings`, {
+    const resp = await fetch(`${BASE_URL}/api/settings/1`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -17,10 +16,10 @@ async function saveSettings(params) {
         body: JSON.stringify(params)
     })
     const setting = await resp.json();
-    return setting["data"];
+    return setting;
 }
 
-// file 页面 api
+// get file list
 async function fetchFileList(params,fileName) {
     const resp = await fetch(BASE_URL + "/api/file/list?fileName="+fileName, {
         method: "POST",
@@ -29,7 +28,6 @@ async function fetchFileList(params,fileName) {
         },
         body:JSON.stringify({"type":params.type,"sort":params.sort,"order":params.order})
     })
-    //
     const data = await resp.json()
     console.log('data:',data);
     return data.data;
