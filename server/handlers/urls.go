@@ -19,4 +19,5 @@ func (h *Handlers) Register(engine *gin.Engine) {
 	r := engine.Group("/api")
 	r.POST("/settings/:userId", h.handlerSaveSettings)
 	r.GET("/settings/:userId", h.handlerGetSettings)
+	r.POST("/task/submit", h.handlerSubmit)
 }

@@ -13,7 +13,14 @@ const (
 	TaskStatusPending     = "pending"
 	TaskStatusFailed      = "failed"
 	TaskStatusCanceled    = "canceled"
-	TaskStatusPaused      = "paused"
+)
+
+const (
+	TaskOptionStart   = "start"
+	TaskOptionPause   = "pause"
+	TaskOptionDelete  = "delete"
+	TaskOptionRefresh = "refresh"
+	TaskOptionCancel  = "cancel"
 )
 
 var ErrInputParam = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入参数有误"}
@@ -23,5 +30,6 @@ var ErrGetSettings = httpDownloadServer.Error{Code: http.StatusInternalServerErr
 func Migration(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&Settings{},
+		&Task{},
 	)
 }
