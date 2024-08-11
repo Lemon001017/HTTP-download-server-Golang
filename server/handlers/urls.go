@@ -17,6 +17,6 @@ func NewHandlers(db *gorm.DB) *Handlers {
 
 func (h *Handlers) Register(engine *gin.Engine) {
 	r := engine.Group("/api")
-	r.POST("/settings", h.handlerSaveSettings)
-	r.GET("/settings", h.handlerGetSettings)
+	r.POST("/settings/:userId", h.handlerSaveSettings)
+	r.GET("/settings/:userId", h.handlerGetSettings)
 }

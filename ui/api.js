@@ -2,14 +2,14 @@
 const BASE_URL = "http://localhost:8000"
 // 设置页面 api
 async function fetchSettings() {
-    const response = await fetch(`${BASE_URL}/api/settings/get`);
+    const response = await fetch(`${BASE_URL}/api/settings`);
     return (await response.json())["data"];
 }
 
 
 // 保存设置
 async function saveSettings(params) {
-    const resp = await fetch(`${BASE_URL}/api/settings/update`, {
+    const resp = await fetch(`${BASE_URL}/api/settings`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"

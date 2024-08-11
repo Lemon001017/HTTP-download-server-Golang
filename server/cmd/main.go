@@ -135,7 +135,7 @@ func main() {
 	}), gin.Recovery())
 
 	if err = server.Prepare(r); err != nil {
-		log.Panic("prepare piaojuhe failed", err)
+		log.Panic("prepare http-download-server failed", err)
 		return
 	}
 
