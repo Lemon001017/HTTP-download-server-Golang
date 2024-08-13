@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/restsend/carrot/apidocs"
 	"gorm.io/gorm"
 )
 
@@ -24,4 +25,5 @@ func (h *Handlers) Register(engine *gin.Engine) {
 	r.GET("/settings/:userId", h.handlerGetSettings)
 	r.POST("/task/submit", h.handlerSubmit)
 	r.GET("/event/:key", h.handlerSSE)
+	apidocs.RegisterHandler(engine.Group("/api/docs"), h.GetDocs(), nil)
 }
