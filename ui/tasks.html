@@ -39,27 +39,27 @@
                 this.fetchData()
                 this.connectSSE()
             },
-            async connectSSE() {
-                let eventSource = new EventSource("http://localhost:8000/sse/event");
-                eventSource.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    const index = this.taskData.findIndex(t => t.id === data.downloadTaskId);
-                    if (index !== -1) {
-                        this.taskData[index].progress = data.progress;
-                        this.taskData[index].downloadSpeed = data.downloadSpeed;
-                        this.taskData[index].status = data.status;
-                        this.taskData[index].remainingTime = data.remainingTime;
-                    }
-                }
-                eventSource.onopen = () => {
-                    console.log('sse连接成功');
-                };
+            // async connectSSE() {
+            //     let eventSource = new EventSource("http://localhost:8000/sse/event");
+            //     eventSource.onmessage = (event) => {
+            //         const data = JSON.parse(event.data);
+            //         const index = this.taskData.findIndex(t => t.id === data.downloadTaskId);
+            //         if (index !== -1) {
+            //             this.taskData[index].progress = data.progress;
+            //             this.taskData[index].downloadSpeed = data.downloadSpeed;
+            //             this.taskData[index].status = data.status;
+            //             this.taskData[index].remainingTime = data.remainingTime;
+            //         }
+            //     }
+            //     eventSource.onopen = () => {
+            //         console.log('sse连接成功');
+            //     };
 
-                eventSource.onerror = (error) => {
-                    console.error(`SSE 连接错误`, error);
-                    eventSource.close();
-                };
-            },
+            //     eventSource.onerror = (error) => {
+            //         console.error(`SSE 连接错误`, error);
+            //         eventSource.close();
+            //     };
+            // },
 
             async fetchData() {
                 let data = {

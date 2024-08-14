@@ -8,6 +8,12 @@ import (
 )
 
 const (
+	MinChunkSize = 32 * 1024
+	MidChunkSize = 1024 * 1024
+	MaxChunkSize = 10 * 1024 * 1024
+)
+
+const (
 	TaskStatusDownloading = "downloading"
 	TaskStatusDownloaded  = "downloaded"
 	TaskStatusPending     = "pending"

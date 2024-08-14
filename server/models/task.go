@@ -1,11 +1,16 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type Task struct {
-	ID            uint      `json:"id" gorm:"primaryKey" comment:"任务ID"`
+	ID            string    `json:"id" gorm:"primaryKey" comment:"任务ID"`
 	FileType      string    `json:"type" gorm:"size:20" comment:"文件类型"`
 	Url           string    `json:"url" gorm:"size:200" comment:"下载地址"`
+	SavePath      string    `json:"savePath" gorm:"size:200" comment:"保存路径"`
 	Name          string    `json:"name" gorm:"size:200" comment:"文件名"`
 	Threads       uint      `json:"threads" gorm:"size:20" comment:"线程数"`
 	Size          float64   `json:"size" gorm:"size:20" comment:"文件大小"`
@@ -15,4 +20,8 @@ type Task struct {
 	RemainingTime float64   `json:"remainingTime" gorm:"size:20" comment:"剩余时间"`
 	CreatedAt     time.Time `json:"createdAt" gorm:"autoCreateTime"`
 	UpdatedAt     time.Time `json:"updatedAt" gorm:"autoUpdateTime"`
+}
+
+func AddTask(db *gorm.DB, task *Task) error {
+	return db.Create(task).Error
 }

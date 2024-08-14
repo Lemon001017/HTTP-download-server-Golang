@@ -39,6 +39,8 @@ func TestSubmit(t *testing.T) {
 		assert.Nil(t, err)
 		w := c.Post("POST", "/api/task/submit", req)
 		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "key")
+		// time.Sleep(time.Second * 25)
 	})
 
 	t.Run("bind req error", func(t *testing.T) {

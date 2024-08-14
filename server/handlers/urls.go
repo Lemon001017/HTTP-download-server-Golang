@@ -9,8 +9,10 @@ import (
 )
 
 type Handlers struct {
-	db *gorm.DB
+	db           *gorm.DB
 	eventSources sync.Map
+	wg           sync.WaitGroup
+	mu           sync.Mutex
 }
 
 func NewHandlers(db *gorm.DB) *Handlers {
