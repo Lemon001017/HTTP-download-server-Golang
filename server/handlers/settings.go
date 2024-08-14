@@ -9,7 +9,7 @@ import (
 	"github.com/restsend/carrot"
 )
 
-func (h *Handlers) handlerSaveSettings(c *gin.Context) {
+func (h *Handlers) handleSaveSettings(c *gin.Context) {
 	userId, err := strconv.ParseUint(c.Param("userId"), 10, 64)
 	if err != nil {
 		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
@@ -32,7 +32,7 @@ func (h *Handlers) handlerSaveSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "保存成功"})
 }
 
-func (h *Handlers) handlerGetSettings(c *gin.Context) {
+func (h *Handlers) handleGetSettings(c *gin.Context) {
 	userId, err := strconv.ParseUint(c.Param("userId"), 10, 64)
 	if err != nil {
 		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
