@@ -60,6 +60,7 @@ func (h *Handlers) handlerSubmit(c *gin.Context) {
 	task, err := h.initTask(url)
 	if err != nil {
 		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
 	}
 
 	eventSource := h.createEventSource()
