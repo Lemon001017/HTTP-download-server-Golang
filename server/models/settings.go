@@ -17,7 +17,7 @@ type Settings struct {
 }
 
 func UpdateSettings(db *gorm.DB, settings *Settings, userId uint) error {
-	res := db.Model(&Settings{}).Where("user_id = ?", userId).Updates(map[string]interface{}{
+	res := db.Model(&Settings{}).Where("user_id = ?", userId).Save(map[string]interface{}{
 		"user_id":            userId,
 		"download_path":      settings.DownloadPath,
 		"max_tasks":          settings.MaxTasks,
@@ -35,3 +35,4 @@ func GetSettings(db *gorm.DB, userId uint) (*Settings, error) {
 	err := db.Model(&Settings{}).Where("user_id = ?", userId).First(&settings).Error
 	return &settings, err
 }
+
