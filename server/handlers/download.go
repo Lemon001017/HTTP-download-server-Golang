@@ -101,48 +101,59 @@ func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) 
 
 func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource) error {
 	defer h.wg.Done()
-	req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
-	if err != nil {
-		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
-		return err
+	
+	// Set the maximum number of retries
+	maxRetries := 3
+	for retry := 0; retry < maxRetries; retry++ {
+		req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
+		if err != nil {
+			carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
+			return err
+		}
+
+		req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", chunk.Start, chunk.End))
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36")
+		req.Header.Set("Accept", "*/*")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPartialContent {
+			carrot.Error("Failed to download file", "key:", es.key, "url:", chunk.Url, "status:", resp.StatusCode)
+			return err
+		}
+
+		h.mu.Lock()
+		defer h.mu.Unlock()
+
+		if _, err := outputFile.Seek(int64(chunk.Start), 0); err != nil {
+			carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
+			return err
+		}
+
+		n, err := io.Copy(outputFile, resp.Body)
+		if err != nil {
+			carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
+			if retry < maxRetries-1 {
+				carrot.Warning("Retrying download after failure", "retry:", retry+1, "key:", es.key, "url:", chunk.Url)
+				continue
+			}
+			return err
+		}
+
+		if n > 0 {
+			chunk.Done = true
+			carrot.Info("the", chunk.Index, "part of the file has been downloaded")
+			return nil
+		}
 	}
 
-	// Sets the request header, specifying the range of bytes to download
-	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", chunk.Start, chunk.End))
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36")
-	req.Header.Set("Accept", "*/*")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusPartialContent {
-		carrot.Error("Failed to download file", "key:", es.key, "url:", chunk.Url, "status:", resp.StatusCode)
-		return err
-	}
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if _, err := outputFile.Seek(int64(chunk.Start), 0); err != nil {
-		carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return err
-	}
-
-	_, err = io.Copy(outputFile, resp.Body)
-	if err != nil {
-		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return err
-	}
-
-	chunk.Done = true
-
-	carrot.Info("the", chunk.Index, "part of the file has been downloaded", chunk.Done)
-	return nil
+	return models.ErrExceedMaxRetries
 }
 
 func (h *Handlers) initTask(url string) (*models.Task, error) {
@@ -187,10 +198,11 @@ func (h *Handlers) getSettingsInfo() (string, float64, uint, error) {
 
 	outputDir := settings.DownloadPath
 	if outputDir == "" {
-		outputDir, err = os.Getwd()
-		if err != nil {
-			return "", 0, 0, err
-		}
+		// outputDir, err = os.Getwd()
+		// if err != nil {
+		// 	return "", 0, 0, err
+		// }
+		outputDir = "d:/project"
 	}
 	maxDownloadSpeed := settings.MaxDownloadSpeed
 	if maxDownloadSpeed == 0 {
@@ -218,14 +230,20 @@ func (h *Handlers) getChunkInfo(fileSize int64) (int64, int64) {
 }
 
 func (h *Handlers) getFileInfo(url string, outputDir string) (int64, string, string, error) {
-	resp, err := http.Head(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, "", "", err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, "", "", err
 	}
 	defer resp.Body.Close()
-
-	resp.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36")
-	resp.Header.Set("Accept", "*/*")
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, "", "", err
