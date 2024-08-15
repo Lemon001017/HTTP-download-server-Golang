@@ -65,9 +65,8 @@ func (h *Handlers) processDownload(eventSource *EventSource, task *models.Task) 
 		return
 	}
 
-	h.wg.Add(int(numChunks))
-
 	for i := 0; i < int(numChunks); i++ {
+		h.wg.Add(1)
 		start := int64(i) * chunkSize
 		end := start + chunkSize - 1
 		if end >= fileSize {
@@ -76,19 +75,22 @@ func (h *Handlers) processDownload(eventSource *EventSource, task *models.Task) 
 		// carrot.Info("key:", eventSource.key, "start:", start, "end:", end)
 
 		go func() {
-			h.downloadChunk(i, start, end, outputFile, task.Url, eventSource)
+			err := h.downloadChunk(i, start, end, outputFile, task.Url, eventSource)
+			if err != nil {
+				carrot.Error("download the", i, "Chunk error", "key:", eventSource.key, "url:", task.Url, "err:", err)
+			}
 		}()
 	}
 	h.wg.Wait()
 	carrot.Info("Download complete", "key:", eventSource.key, "url:", task.Url)
 }
 
-func (h *Handlers) downloadChunk(i int, start, end int64, outputFile *os.File, url string, es *EventSource) {
+func (h *Handlers) downloadChunk(i int, start, end int64, outputFile *os.File, url string, es *EventSource) error {
 	defer h.wg.Done()
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", url)
-		return
+		return err
 	}
 
 	// Sets the request header, specifying the range of bytes to download
@@ -100,13 +102,13 @@ func (h *Handlers) downloadChunk(i int, start, end int64, outputFile *os.File, u
 	resp, err := client.Do(req)
 	if err != nil {
 		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", url, "err:", err)
-		return
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent {
 		carrot.Error("Failed to download file", "key:", es.key, "url:", url, "status:", resp.StatusCode)
-		return
+		return err
 	}
 
 	h.mu.Lock()
@@ -114,15 +116,16 @@ func (h *Handlers) downloadChunk(i int, start, end int64, outputFile *os.File, u
 
 	if _, err := outputFile.Seek(start, 0); err != nil {
 		carrot.Error("seek error", "key:", es.key, "url:", url, "err:", err)
-		return
+		return err
 	}
 
 	_, err = io.Copy(outputFile, resp.Body)
 	if err != nil {
 		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", url, "err:", err)
-		return
+		return err
 	}
 	carrot.Info("the", i, "part of the file has been downloaded")
+	return nil
 }
 
 func (h *Handlers) getSettingsInfo() (string, float64, uint, error) {
