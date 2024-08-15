@@ -1,7 +1,6 @@
 package models
 
 import (
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -23,10 +22,6 @@ func UpdateSettings(db *gorm.DB, settings *Settings, userId uint) error {
 		"max_tasks":          settings.MaxTasks,
 		"max_download_speed": settings.MaxDownloadSpeed,
 	})
-
-	if res.RowsAffected == 0 {
-		return errors.New("user not found")
-	}
 	return res.Error
 }
 
@@ -35,4 +30,3 @@ func GetSettings(db *gorm.DB, userId uint) (*Settings, error) {
 	err := db.Model(&Settings{}).Where("user_id = ?", userId).First(&settings).Error
 	return &settings, err
 }
-

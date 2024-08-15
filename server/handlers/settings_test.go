@@ -47,21 +47,6 @@ func TestSaveSettings(t *testing.T) {
 		w := c.Post("POST", "/api/settings/err", req)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
-
-	t.Run("db update err", func(t *testing.T) {
-		settings := &models.Settings{
-			UserID:           1,
-			DownloadPath:     "/test",
-			MaxDownloadSpeed: 100,
-			MaxTasks:         10,
-		}
-		req, err := json.Marshal(settings)
-		assert.Nil(t, err)
-		w := c.Post("POST", "/api/settings/2", req)
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
-		assert.Contains(t, w.Body.String(), "保存失败")
-	})
-
 }
 
 func TestGetSettings(t *testing.T) {

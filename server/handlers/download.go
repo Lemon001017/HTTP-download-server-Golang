@@ -42,90 +42,141 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 
 	// Open a goroutine to handle the download separately
 	go func() {
-		h.processDownload(eventSource, task)
+		h.processDownload(task, eventSource)
 	}()
 	c.JSON(http.StatusOK, EventSourceResult{Key: eventSource.key})
 }
 
-func (h *Handlers) processDownload(eventSource *EventSource, task *models.Task) {
+func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) {
 	fileSize := int64(task.Size)
-	chunkSize, numChunks := h.getChunkInfo(fileSize)
+	chunkSize := task.ChunkSize
+	numChunks := task.ChunkNum
 	carrot.Info("fileSize:", fileSize, "savePath:", task.SavePath, "chunkSize:", chunkSize, "numChunks:", numChunks)
 
 	outputFile, err := os.Create(task.SavePath)
 	if err != nil {
-		carrot.Error("create tempFile error", "key:", eventSource.key, "url:", task.Url)
+		carrot.Error("create tempFile error", "key:", eventSource.key, "id:", task.ID, "url:", task.Url)
 		return
 	}
 	defer outputFile.Close()
 
 	// Set the size of the temporary file to be the same as the destination file
 	if err := outputFile.Truncate(fileSize); err != nil {
-		carrot.Error("set fileSize error", "key:", eventSource.key, "url:", task.Url)
 		return
 	}
 
 	for i := 0; i < int(numChunks); i++ {
-		h.wg.Add(1)
 		start := int64(i) * chunkSize
 		end := start + chunkSize - 1
 		if end >= fileSize {
 			end = fileSize - 1
 		}
-		// carrot.Info("key:", eventSource.key, "start:", start, "end:", end)
+		task.Chunk[i].Url = task.Url
+		task.Chunk[i].Index = i
+		task.Chunk[i].Start = uint(start)
+		task.Chunk[i].End = int(end)
+		task.Chunk[i].Done = false
+	}
 
+	for i := 0; i < int(numChunks); i++ {
+		h.wg.Add(1)
 		go func() {
-			err := h.downloadChunk(i, start, end, outputFile, task.Url, eventSource)
+			err := h.downloadChunk(&task.Chunk[i], outputFile, eventSource)
 			if err != nil {
-				carrot.Error("download the", i, "Chunk error", "key:", eventSource.key, "url:", task.Url, "err:", err)
+				carrot.Error("download the", i, "Chunk error", "key:", eventSource.key, "id:", task.ID, "url:", task.Url, "err:", err)
 			}
 		}()
 	}
 	h.wg.Wait()
-	carrot.Info("Download complete", "key:", eventSource.key, "url:", task.Url)
+
+	task.Status = models.TaskStatusDownloaded
+	err = models.UpdateTask(h.db, task)
+	if err != nil {
+		carrot.Error("update task error", "key:", eventSource.key, "id:", task.ID, "url:", task.Url, "err:", err)
+		return
+	}
+
+	carrot.Info("Download complete", "key:", eventSource.key, "id:", task.ID, "url:", task.Url)
 }
 
-func (h *Handlers) downloadChunk(i int, start, end int64, outputFile *os.File, url string, es *EventSource) error {
+func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource) error {
 	defer h.wg.Done()
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
 	if err != nil {
-		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", url)
+		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
 		return err
 	}
 
 	// Sets the request header, specifying the range of bytes to download
-	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", start, end))
+	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", chunk.Start, chunk.End))
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36")
 	req.Header.Set("Accept", "*/*")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", url, "err:", err)
+		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent {
-		carrot.Error("Failed to download file", "key:", es.key, "url:", url, "status:", resp.StatusCode)
+		carrot.Error("Failed to download file", "key:", es.key, "url:", chunk.Url, "status:", resp.StatusCode)
 		return err
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, err := outputFile.Seek(start, 0); err != nil {
-		carrot.Error("seek error", "key:", es.key, "url:", url, "err:", err)
+	if _, err := outputFile.Seek(int64(chunk.Start), 0); err != nil {
+		carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return err
 	}
 
 	_, err = io.Copy(outputFile, resp.Body)
 	if err != nil {
-		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", url, "err:", err)
+		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return err
 	}
-	carrot.Info("the", i, "part of the file has been downloaded")
+
+	chunk.Done = true
+
+	carrot.Info("the", chunk.Index, "part of the file has been downloaded", chunk.Done)
 	return nil
+}
+
+func (h *Handlers) initTask(url string) (*models.Task, error) {
+	outputDir, _, _, err := h.getSettingsInfo()
+	if err != nil {
+		return nil, err
+	}
+
+	fileSize, outputPath, fileName, err := h.getFileInfo(url, outputDir)
+	if err != nil {
+		return nil, err
+	}
+
+	chunkSize, numChunks := h.getChunkInfo(fileSize)
+
+	task := models.Task{
+		ID:        carrot.RandText(4),
+		Name:      fileName,
+		Url:       url,
+		Size:      float64(fileSize),
+		SavePath:  outputPath,
+		FileType:  filepath.Ext(fileName),
+		Status:    models.TaskStatusDownloading,
+		Threads:   4,
+		ChunkNum:  numChunks,
+		ChunkSize: chunkSize,
+		Chunk:     make([]models.Chunk, numChunks),
+	}
+	err = models.AddTask(h.db, &task)
+	if err != nil {
+		return nil, err
+	}
+
+	return &task, nil
 }
 
 func (h *Handlers) getSettingsInfo() (string, float64, uint, error) {
@@ -135,8 +186,20 @@ func (h *Handlers) getSettingsInfo() (string, float64, uint, error) {
 	}
 
 	outputDir := settings.DownloadPath
+	if outputDir == "" {
+		outputDir, err = os.Getwd()
+		if err != nil {
+			return "", 0, 0, err
+		}
+	}
 	maxDownloadSpeed := settings.MaxDownloadSpeed
+	if maxDownloadSpeed == 0 {
+		maxDownloadSpeed = 1e9
+	}
 	maxTasks := settings.MaxTasks
+	if maxTasks == 0 {
+		maxTasks = 4
+	}
 	return outputDir, maxDownloadSpeed, maxTasks, nil
 }
 
@@ -175,31 +238,4 @@ func (h *Handlers) getFileInfo(url string, outputDir string) (int64, string, str
 	outputPath := filepath.Join(outputDir, fileName)
 
 	return fileSize, outputPath, fileName, nil
-}
-
-func (h *Handlers) initTask(url string) (*models.Task, error) {
-	outputDir, _, _, err := h.getSettingsInfo()
-	if err != nil {
-		return nil, err
-	}
-
-	fileSize, outputPath, fileName, err := h.getFileInfo(url, outputDir)
-	if err != nil {
-		return nil, err
-	}
-	task := models.Task{
-		ID:       carrot.RandText(4),
-		Name:     fileName,
-		Url:      url,
-		Size:     float64(fileSize),
-		SavePath: outputPath,
-		FileType: filepath.Ext(fileName),
-		Threads:  4,
-	}
-	err = models.AddTask(h.db, &task)
-	if err != nil {
-		return nil, err
-	}
-
-	return &task, nil
 }

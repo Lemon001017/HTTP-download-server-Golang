@@ -39,10 +39,6 @@ func TestUpdateSettings(t *testing.T) {
 	assert.Equal(t, s.DownloadPath, "/test2")
 	assert.Equal(t, s.MaxTasks, uint(666))
 	assert.Equal(t, s.MaxDownloadSpeed, 999.666)
-
-	err = UpdateSettings(db, &settings2, 2)
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "user not found")
 }
 
 func TestGetSettings(t *testing.T) {
