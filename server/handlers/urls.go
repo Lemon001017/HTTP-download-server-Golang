@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/restsend/carrot/apidocs"
@@ -13,11 +15,13 @@ type Handlers struct {
 	eventSources sync.Map
 	wg           sync.WaitGroup
 	mu           sync.Mutex
+	client       *http.Client
 }
 
 func NewHandlers(db *gorm.DB) *Handlers {
 	return &Handlers{
-		db: db,
+		db:     db,
+		client: &http.Client{Timeout: 60 * time.Minute},
 	}
 }
 

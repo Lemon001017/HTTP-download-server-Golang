@@ -75,19 +75,19 @@ func (h *Handlers) createEventSource() *EventSource {
 	}
 	h.eventSources.Store(key, eventSource)
 
-	go func() {
-		defer h.cleanEventSource(key)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(1 * time.Minute):
-				if time.Since(eventSource.lastTime) > 10*time.Minute {
-					return
-				}
-			}
-		}
-	}()
+	// go func() {
+	// 	defer h.cleanEventSource(key)
+	// 	for {
+	// 		select {
+	// 		case <-ctx.Done():
+	// 			return
+	// 		case <-time.After(1 * time.Minute):
+	// 			if time.Since(eventSource.lastTime) > 10*time.Minute {
+	// 				return
+	// 			}
+	// 		}
+	// 	}
+	// }()
 	return eventSource
 }
 
