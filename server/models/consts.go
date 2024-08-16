@@ -34,7 +34,8 @@ var ErrSaveFailed = httpDownloadServer.Error{Code: http.StatusInternalServerErro
 var ErrGetSettings = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "获取设置失败"}
 
 var ErrInputUrl = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入地址有误"}
-var ErrExceedMaxRetries = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "下载失败，已达到最大重试次数"}
+var ErrIncomleteFile = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "文件不完整"}
+
 
 func Migration(db *gorm.DB) error {
 	return db.AutoMigrate(

@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"HTTP-download-server/server/models"
+	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,11 +66,9 @@ func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) 
 
 	for i := 0; i < int(numChunks); i++ {
 		start := int64(i) * chunkSize
-		end := start + chunkSize - 1
-		if end >= fileSize {
-			end = fileSize - 1
-		}
+		end := math.Min(float64(start+chunkSize), float64(fileSize)) - 1
 		task.Chunk[i].Url = task.Url
+		task.Chunk[i].FileSize = fileSize
 		task.Chunk[i].Index = i
 		task.Chunk[i].Start = int(start)
 		task.Chunk[i].End = int(end)
@@ -78,75 +78,83 @@ func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) 
 	for i := 0; i < int(numChunks); i++ {
 		h.wg.Add(1)
 		go func() {
-			h.downloadChunk(&task.Chunk[i], outputFile, eventSource, startTime, task.TotalDownloaded, fileSize)
+			h.downloadChunk(&task.Chunk[i], outputFile, eventSource, startTime)
 		}()
 	}
 	h.wg.Wait()
 
 	task.Status = models.TaskStatusDownloaded
+	task.TotalDownloaded = h.totalDownloaded
 	err = models.UpdateTask(h.db, task)
 	if err != nil {
 		carrot.Error("update task error", "key:", eventSource.key, "id:", task.ID, "url:", task.Url, "err:", err)
 		return
 	}
 
-	carrot.Info("Download complete", "key:", eventSource.key, "id:", task.ID, "url:", task.Url)
+	if task.TotalDownloaded == fileSize {
+		carrot.Info("Download complete", "key:", eventSource.key, "id:", task.ID, "url:", task.Url)
+	} else {
+		carrot.Error("Download failed", "key:", eventSource.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncomleteFile)
+	}
 }
 
-func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource, startTime time.Time, totalDownloaded int64, fileSize int64) {
+func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource, startTime time.Time) {
 	defer h.wg.Done()
-	// Set the maximum number of retries
-	maxRetries := 3
-	for retry := 0; retry < maxRetries; retry++ {
-		req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
-		if err != nil {
-			carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
-			return
-		}
 
-		req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", chunk.Start, chunk.End))
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
-		req.Header.Set("Accept", "*/*")
-
-		resp, err := h.client.Do(req)
-		if err != nil {
-			carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusPartialContent {
-			carrot.Error("Failed to download file", "key:", es.key, "url:", chunk.Url, "status:", resp.StatusCode)
-			return
-		}
-
-		h.mu.Lock()
-		if _, err := outputFile.Seek(int64(chunk.Start), 0); err != nil {
-			carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
-			return
-		}
-
-		carrot.Info("the", chunk.Index, "chunk is downloading", "url:", chunk.Url)
-
-		n, err := io.Copy(outputFile, resp.Body)
-		if err != nil {
-			carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
-			if retry < maxRetries-1 {
-				carrot.Warning("Retrying download after failure", "retry:", retry+1, "key:", es.key, "url:", chunk.Url)
-				continue
-			}
-			return
-		}
-		h.mu.Unlock()
-
-		if n > 0 {
-			h.mu.Lock()
-			chunk.Done = true
-			h.mu.Unlock()
-			carrot.Info("the", chunk.Index, "chunk has been downloaded", "url:", chunk.Url)
-			return
-		}
+	req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
+	if err != nil {
+		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
+		return
 	}
+
+	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", chunk.Start, chunk.End))
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusPartialContent {
+		carrot.Error("Failed to download file", "key:", es.key, "url:", chunk.Url, "status:", resp.StatusCode)
+		return
+	}
+
+	buffer := bufio.NewWriterSize(outputFile, 2048)
+
+	h.mu.Lock()
+	if _, err := outputFile.Seek(int64(chunk.Start), 0); err != nil {
+		carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
+		return
+	}
+
+	carrot.Info("the", chunk.Index, "chunk is downloading", "url:", chunk.Url)
+
+	n, err := io.Copy(buffer, resp.Body)
+	if err != nil {
+		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
+		return
+	}
+
+	err = buffer.Flush()
+	if err != nil {
+		carrot.Error("Failed to flush HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
+		return
+	}
+	h.mu.Unlock()
+
+	if n > 0 {
+		h.mu.Lock()
+		chunk.Done = true
+		h.totalDownloaded += n
+		h.mu.Unlock()
+		carrot.Info("the", chunk.Index, "chunk has been downloaded", "url:", chunk.Url)
+		return
+	}
+
 }
 
 func (h *Handlers) initTask(url string) (*models.Task, error) {
@@ -174,7 +182,6 @@ func (h *Handlers) initTask(url string) (*models.Task, error) {
 		ChunkNum:        numChunks,
 		ChunkSize:       chunkSize,
 		Chunk:           make([]models.Chunk, numChunks),
-		TotalDownloaded: 0,
 	}
 	err = models.AddTask(h.db, &task)
 	if err != nil {

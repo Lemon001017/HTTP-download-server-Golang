@@ -28,11 +28,12 @@ type Task struct {
 }
 
 type Chunk struct {
-	Url   string
-	Index int
-	Start int
-	End   int
-	Done  bool // is finished
+	Url      string
+	FileSize int64
+	Index    int
+	Start    int
+	End      int
+	Done     bool // is finished
 }
 
 func AddTask(db *gorm.DB, task *Task) error {
