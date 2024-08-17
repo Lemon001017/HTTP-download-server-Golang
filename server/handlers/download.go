@@ -77,6 +77,7 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		}
 	}
 
+	// Create a pool of goroutines
 	pool, _ := ants.NewPoolWithFunc(3, func(i interface{}) {
 		index := i.(int)
 		h.downloadChunk(&task.Chunk[index], outputFile, es, startTime, task)
@@ -141,36 +142,29 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return
 	}
+
+	chunk.Done = true
+	h.totalDownloaded += n
 	h.mu.Unlock()
 
-	if n > 0 {
-		h.mu.Lock()
-		chunk.Done = true
-		h.totalDownloaded += n
-		elapsedTime := time.Since(startTime).Seconds()
-		speed := math.Round((float64(h.totalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
-		if speed == 0 {
-			speed = 0.1
-		}
-		progress := math.Round((float64(h.totalDownloaded)/float64(chunk.FileSize)*100)*10) / 10
-		remainingTime := math.Round((float64((chunk.FileSize-h.totalDownloaded)/1024/1024)/speed)*10) / 10
-
-		carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "seconds")
-
-		task.Progress = progress
-		task.Speed = speed
-		task.RemainingTime = remainingTime
-		task.TotalDownloaded = h.totalDownloaded
-		err := models.UpdateTask(h.db, task)
-		if err != nil {
-			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-		}
-
-		carrot.Info("the", chunk.Index, "chunk has been downloaded", "url:", chunk.Url)
-		h.mu.Unlock()
-		return
+	elapsedTime := time.Since(startTime).Seconds()
+	speed := math.Round((float64(h.totalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
+	if speed == 0 {
+		speed = 0.1
 	}
+	progress := math.Round((float64(h.totalDownloaded)/float64(chunk.FileSize)*100)*10) / 10
+	remainingTime := math.Round((float64((chunk.FileSize-h.totalDownloaded)/1024/1024)/speed)*10) / 10
 
+	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "seconds")
+
+	task.Progress = progress
+	task.Speed = speed
+	task.RemainingTime = remainingTime
+	task.TotalDownloaded = h.totalDownloaded
+	err = models.UpdateTask(h.db, task)
+	if err != nil {
+		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+	}
 }
 
 func (h *Handlers) initTask(url string) (*models.Task, error) {

@@ -4,6 +4,7 @@ go 1.22.4
 
 require (
 	github.com/gin-gonic/gin v1.10.0
+	github.com/panjf2000/ants v1.3.0
 	github.com/restsend/carrot v0.0.0-20240809103104-5f7d169d5148
 	github.com/stretchr/testify v1.9.0
 	gorm.io/gorm v1.25.11
