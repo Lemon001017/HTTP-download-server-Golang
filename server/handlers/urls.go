@@ -11,17 +11,16 @@ import (
 )
 
 type Handlers struct {
-	totalDownloaded int64
-	db              *gorm.DB
-	eventSources    sync.Map
-	wg              sync.WaitGroup
-	mu              sync.Mutex
-	client          *http.Client
+	db           *gorm.DB
+	eventSources sync.Map
+	wg           sync.WaitGroup
+	mu           sync.Mutex
+	client       *http.Client
 }
 
 func NewHandlers(db *gorm.DB) *Handlers {
 	return &Handlers{
-		db:     db,
+		db: db,
 		client: &http.Client{
 			Timeout: 60 * time.Minute,
 		},

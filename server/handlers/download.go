@@ -23,8 +23,9 @@ type DownloadRequest struct {
 }
 
 type DownloadProgress struct {
-	Progress float64 `json:"progress"`
-	Speed    float64 `json:"speed"`
+	Progress      float64 `json:"progress"`
+	Speed         float64 `json:"speed"`
+	RemainingTime float64 `json:"remainingTime"`
 }
 
 // submit task
@@ -94,7 +95,6 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 
 	if task.TotalDownloaded == fileSize {
 		task.Status = models.TaskStatusDownloaded
-		h.totalDownloaded = 0
 		err = models.UpdateTask(h.db, task)
 		if err != nil {
 			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
@@ -102,7 +102,6 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		}
 		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
 	} else {
-		h.totalDownloaded = 0
 		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
 	}
 }
@@ -148,23 +147,22 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 	}
 
 	chunk.Done = true
-	h.totalDownloaded += n
+	task.TotalDownloaded += n
 	h.mu.Unlock()
 
 	elapsedTime := time.Since(startTime).Seconds()
-	speed := math.Round((float64(h.totalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
+	speed := math.Round((float64(task.TotalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
 	if speed == 0 {
 		speed = 0.1
 	}
-	progress := math.Round((float64(h.totalDownloaded)/float64(chunk.FileSize)*100)*10) / 10
-	remainingTime := math.Round((float64((chunk.FileSize-h.totalDownloaded)/1024/1024)/speed)*10) / 10
+	progress := math.Round((float64(task.TotalDownloaded)/float64(chunk.FileSize)*100)*10) / 10
+	remainingTime := math.Round((float64((chunk.FileSize-task.TotalDownloaded)/1024/1024)/speed)*10) / 10
 
-	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "seconds")
+	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
 
 	task.Progress = progress
 	task.Speed = speed
 	task.RemainingTime = remainingTime
-	task.TotalDownloaded = h.totalDownloaded
 	err = models.UpdateTask(h.db, task)
 	if err != nil {
 		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
