@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -59,7 +61,7 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 
 	outputFile, err := os.Create(task.SavePath)
 	if err != nil {
-		carrot.Error("create tempFile error", "key:", es.key, "id:", task.ID, "url:", task.Url)
+		carrot.Error("create tempFile error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
 		return
 	}
 	defer outputFile.Close()
@@ -92,6 +94,7 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 
 	if task.TotalDownloaded == fileSize {
 		task.Status = models.TaskStatusDownloaded
+		h.totalDownloaded = 0
 		err = models.UpdateTask(h.db, task)
 		if err != nil {
 			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
@@ -99,6 +102,7 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		}
 		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
 	} else {
+		h.totalDownloaded = 0
 		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
 	}
 }
@@ -262,10 +266,29 @@ func (h *Handlers) getFileInfo(url string, outputDir string) (int64, string, str
 	}
 
 	fileSize := resp.ContentLength
-	segments := strings.Split(url, "/")
-
-	fileName := segments[len(segments)-1]
+	fileName := extractFileName(resp, url)
 	outputPath := filepath.Join(outputDir, fileName)
 
 	return fileSize, outputPath, fileName, nil
+}
+
+func extractFileName(resp *http.Response, downloadURL string) string {
+	if contentDisposition := resp.Header.Get("Content-Disposition"); contentDisposition != "" {
+		_, params, err := mime.ParseMediaType(contentDisposition)
+		if err == nil && params["filename"] != "" {
+			return params["filename"]
+		}
+	}
+
+	parsedURL, err := url.Parse(downloadURL)
+	if err != nil {
+		parsedURL.Path = "/unknown"
+	}
+
+	re := regexp.MustCompile(`[^\/]+\.[a-zA-Z0-9]+$`)
+	fileName := re.FindString(parsedURL.Path)
+	if fileName == "" {
+		fileName = "unknown_file"
+	}
+	return fileName
 }

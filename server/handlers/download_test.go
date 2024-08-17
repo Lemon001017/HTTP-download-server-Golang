@@ -4,7 +4,9 @@ import (
 	"HTTP-download-server/server/models"
 	"encoding/json"
 	"net/http"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/restsend/carrot"
 	"github.com/stretchr/testify/assert"
@@ -26,21 +28,22 @@ func TestSubmit(t *testing.T) {
 	t.Run("submit success", func(t *testing.T) {
 		settings := models.Settings{
 			UserID:           1,
-			DownloadPath:     "d:/project",
+			DownloadPath:     "./",
 			MaxDownloadSpeed: 5,
 			MaxTasks:         2,
 		}
 		db.Create(&settings)
 
 		reqBody := DownloadRequest{
-			URL: "https://zy.yunqishi8.com/upload/mp4/202005/1-10.mp4",
+			URL: "https://q6.itc.cn/images01/20240813/d4b6af09a7d74a05890afa16b9e4dfa8.jpeg",
 		}
 		req, err := json.Marshal(reqBody)
 		assert.Nil(t, err)
 		w := c.Post("POST", "/api/task/submit", req)
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "key")
-		// time.Sleep(time.Second * 25)
+		time.Sleep(2 * time.Second)
+		os.Remove("./d4b6af09a7d74a05890afa16b9e4dfa8.jpeg")
 	})
 
 	t.Run("bind req error", func(t *testing.T) {
