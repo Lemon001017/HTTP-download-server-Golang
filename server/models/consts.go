@@ -34,7 +34,7 @@ var ErrSaveFailed = httpDownloadServer.Error{Code: http.StatusInternalServerErro
 var ErrGetSettings = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "获取设置失败"}
 
 var ErrInputUrl = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入地址有误"}
-var ErrIncomleteFile = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "文件不完整"}
+var ErrIncompleteFile = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "文件不完整"}
 
 
 func Migration(db *gorm.DB) error {

@@ -41,5 +41,12 @@ func AddTask(db *gorm.DB, task *Task) error {
 }
 
 func UpdateTask(db *gorm.DB, task *Task) error {
-	return db.Model(task).Where("id = ?", task.ID).Updates(task).Error
+	return db.Model(task).Where("id = ?", task.ID).Updates(map[string]interface{}{
+		"status":           task.Status,
+		"progress":         task.Progress,
+		"remaining_time":   task.RemainingTime,
+		"total_downloaded": task.TotalDownloaded,
+		"speed":            task.Speed,
+		"updated_at":       time.Now(),
+	}).Error
 }

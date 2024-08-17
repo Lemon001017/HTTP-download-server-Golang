@@ -22,7 +22,9 @@ type Handlers struct {
 func NewHandlers(db *gorm.DB) *Handlers {
 	return &Handlers{
 		db:     db,
-		client: &http.Client{Timeout: 60 * time.Minute},
+		client: &http.Client{
+			Timeout: 60 * time.Minute,
+		},
 	}
 }
 

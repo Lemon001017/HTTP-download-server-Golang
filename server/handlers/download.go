@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"HTTP-download-server/server/models"
-	"bufio"
 	"fmt"
 	"io"
 	"math"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/panjf2000/ants"
 	"github.com/restsend/carrot"
 )
 
@@ -50,7 +50,7 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 	c.JSON(http.StatusOK, EventSourceResult{Key: eventSource.key})
 }
 
-func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) {
+func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 	fileSize := int64(task.Size)
 	chunkSize := task.ChunkSize
 	numChunks := task.ChunkNum
@@ -59,7 +59,7 @@ func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) 
 
 	outputFile, err := os.Create(task.SavePath)
 	if err != nil {
-		carrot.Error("create tempFile error", "key:", eventSource.key, "id:", task.ID, "url:", task.Url)
+		carrot.Error("create tempFile error", "key:", es.key, "id:", task.ID, "url:", task.Url)
 		return
 	}
 	defer outputFile.Close()
@@ -67,34 +67,38 @@ func (h *Handlers) processDownload(task *models.Task, eventSource *EventSource) 
 	for i := 0; i < int(numChunks); i++ {
 		start := int64(i) * chunkSize
 		end := math.Min(float64(start+chunkSize), float64(fileSize)) - 1
-		task.Chunk[i].Url = task.Url
-		task.Chunk[i].FileSize = fileSize
-		task.Chunk[i].Index = i
-		task.Chunk[i].Start = int(start)
-		task.Chunk[i].End = int(end)
-		task.Chunk[i].Done = false
+		task.Chunk[i] = models.Chunk{
+			Index:    i,
+			Url:      task.Url,
+			FileSize: fileSize,
+			Start:    int(start),
+			End:      int(end),
+			Done:     false,
+		}
 	}
+
+	pool, _ := ants.NewPoolWithFunc(3, func(i interface{}) {
+		index := i.(int)
+		h.downloadChunk(&task.Chunk[index], outputFile, es, startTime, task)
+	})
+	defer pool.Release()
 
 	for i := 0; i < int(numChunks); i++ {
 		h.wg.Add(1)
-		go func() {
-			h.downloadChunk(&task.Chunk[i], outputFile, eventSource, startTime, task)
-		}()
+		_ = pool.Invoke(i)
 	}
 	h.wg.Wait()
 
-	task.Status = models.TaskStatusDownloaded
-	task.TotalDownloaded = h.totalDownloaded
-	err = models.UpdateTask(h.db, task)
-	if err != nil {
-		carrot.Error("update task error", "key:", eventSource.key, "id:", task.ID, "url:", task.Url, "err:", err)
-		return
-	}
-
 	if task.TotalDownloaded == fileSize {
-		carrot.Info("Download complete", "key:", eventSource.key, "id:", task.ID, "url:", task.Url)
+		task.Status = models.TaskStatusDownloaded
+		err = models.UpdateTask(h.db, task)
+		if err != nil {
+			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+			return
+		}
+		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
 	} else {
-		carrot.Error("Download failed", "key:", eventSource.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncomleteFile)
+		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
 	}
 }
 
@@ -123,49 +127,47 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		return
 	}
 
-	buffer := bufio.NewWriterSize(outputFile, 2048)
+	buf := make([]byte, 2048)
 
 	h.mu.Lock()
-	if _, err := outputFile.Seek(int64(chunk.Start), 0); err != nil {
+	_, err = outputFile.Seek(int64(chunk.Start), 0)
+	if err != nil {
 		carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return
 	}
 
-	n, err := io.Copy(buffer, resp.Body)
+	n, err := io.CopyBuffer(outputFile, resp.Body, buf)
 	if err != nil {
 		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return
-	}
-
-	err = buffer.Flush()
-	if err != nil {
-		carrot.Error("Failed to flush HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return
 	}
 	h.mu.Unlock()
 
 	if n > 0 {
 		h.mu.Lock()
-
 		chunk.Done = true
 		h.totalDownloaded += n
 		elapsedTime := time.Since(startTime).Seconds()
 		speed := math.Round((float64(h.totalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
+		if speed == 0 {
+			speed = 0.1
+		}
 		progress := math.Round((float64(h.totalDownloaded)/float64(chunk.FileSize)*100)*10) / 10
-		remainingTime := float64((chunk.FileSize-h.totalDownloaded)/1024/1024) / speed
+		remainingTime := math.Round((float64((chunk.FileSize-h.totalDownloaded)/1024/1024)/speed)*10) / 10
 
 		carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "seconds")
 
 		task.Progress = progress
 		task.Speed = speed
+		task.RemainingTime = remainingTime
 		task.TotalDownloaded = h.totalDownloaded
 		err := models.UpdateTask(h.db, task)
 		if err != nil {
 			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
 		}
 
-		h.mu.Unlock()
 		carrot.Info("the", chunk.Index, "chunk has been downloaded", "url:", chunk.Url)
+		h.mu.Unlock()
 		return
 	}
 
@@ -185,17 +187,18 @@ func (h *Handlers) initTask(url string) (*models.Task, error) {
 	chunkSize, numChunks := h.getChunkInfo(fileSize)
 
 	task := models.Task{
-		ID:        carrot.RandText(4),
-		Name:      fileName,
-		Url:       url,
-		Size:      float64(fileSize),
-		SavePath:  outputPath,
-		FileType:  filepath.Ext(fileName),
-		Status:    models.TaskStatusDownloading,
-		Threads:   4,
-		ChunkNum:  numChunks,
-		ChunkSize: chunkSize,
-		Chunk:     make([]models.Chunk, numChunks),
+		ID:              carrot.RandText(4),
+		Name:            fileName,
+		Url:             url,
+		Size:            float64(fileSize),
+		SavePath:        outputPath,
+		FileType:        filepath.Ext(fileName),
+		Status:          models.TaskStatusDownloading,
+		Threads:         4,
+		ChunkNum:        numChunks,
+		ChunkSize:       chunkSize,
+		Chunk:           make([]models.Chunk, numChunks),
+		TotalDownloaded: 0,
 	}
 	err = models.AddTask(h.db, &task)
 	if err != nil {
