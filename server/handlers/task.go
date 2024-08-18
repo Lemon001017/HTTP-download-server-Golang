@@ -31,3 +31,21 @@ func (h *Handlers) handleGetTaskList(c *gin.Context) {
 		"data": resp,
 	})
 }
+
+// 根据ids删除任务
+func (h *Handlers) handleDelete(c *gin.Context) {
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	err = models.DeleteTasksByIds(h.db, ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, "delete success")
+}

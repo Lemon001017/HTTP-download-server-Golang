@@ -19,13 +19,12 @@ func createTestDB() *gorm.DB {
 
 func TestUpdateSettings(t *testing.T) {
 	db := createTestDB()
-	settings1 := Settings{
+	db.Create(&Settings{
 		UserID:           1,
 		DownloadPath:     "/test1",
 		MaxTasks:         123,
 		MaxDownloadSpeed: 123.456,
-	}
-	db.Create(&settings1)
+	})
 	settings2 := Settings{
 		UserID:           1,
 		DownloadPath:     "/test2",

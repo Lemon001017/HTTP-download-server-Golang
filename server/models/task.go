@@ -63,10 +63,15 @@ func GetTaskById(db *gorm.DB, id string) (*Task, error) {
 // Get the task list according to the task status
 func GetTasksByStatus(db *gorm.DB, status string) []Task {
 	var tasks []Task
-	if status == "" || status == "All"{
+	if status == "" || status == "All" {
 		db.Find(&tasks)
 	} else {
 		db.Where("status = ?", status).Find(&tasks)
 	}
 	return tasks
+}
+
+// Remove tasks according to ids
+func DeleteTasksByIds(db *gorm.DB, ids []string) error {
+	return db.Where("id IN (?)", ids).Delete(&Task{}).Error
 }
