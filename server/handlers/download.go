@@ -41,8 +41,7 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 
 	eventSource := h.createEventSource()
 
-	url := request.URL
-	task, err := h.initTask(url, eventSource.key)
+	task, err := h.initOneTask(request.URL, eventSource.key)
 	if err != nil {
 		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
 		return
@@ -56,11 +55,8 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 }
 
 func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
-	fileSize := int64(task.Size)
-	chunkSize := task.ChunkSize
-	numChunks := task.ChunkNum
 	startTime := time.Now()
-	carrot.Info("fileSize:", fileSize, "savePath:", task.SavePath, "chunkSize:", chunkSize, "numChunks:", numChunks)
+	carrot.Info("fileSize:", task.Size, "savePath:", task.SavePath, "chunkSize:", task.ChunkSize, "numChunks:", task.ChunkNum)
 
 	outputFile, err := os.Create(task.SavePath)
 	if err != nil {
@@ -69,9 +65,9 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 	}
 	defer outputFile.Close()
 
-	for i := 0; i < int(numChunks); i++ {
-		start := int64(i) * chunkSize
-		end := math.Min(float64(start+chunkSize), float64(fileSize)) - 1
+	for i := 0; i < int(task.ChunkNum); i++ {
+		start := int64(i) * task.ChunkSize
+		end := math.Min(float64(start+task.ChunkSize), float64(task.Size)) - 1
 		task.Chunk[i] = models.Chunk{
 			Index:    i,
 			Url:      task.Url,
@@ -87,13 +83,13 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 	})
 	defer pool.Release()
 
-	for i := 0; i < int(numChunks); i++ {
+	for i := 0; i < int(task.ChunkNum); i++ {
 		h.wg.Add(1)
 		_ = pool.Invoke(i)
 	}
 	h.wg.Wait()
 
-	if task.TotalDownloaded == fileSize {
+	if task.TotalDownloaded == task.Size {
 		task.Status = models.TaskStatusDownloaded
 		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
 	} else {
@@ -164,7 +160,7 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 	)
 }
 
-func (h *Handlers) initTask(url, key string) (*models.Task, error) {
+func (h *Handlers) initOneTask(url, key string) (*models.Task, error) {
 	outputDir, _, _, err := h.getSettingsInfo()
 	if err != nil {
 		return nil, err

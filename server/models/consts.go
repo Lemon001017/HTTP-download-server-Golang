@@ -22,6 +22,14 @@ const (
 )
 
 const (
+	TaskFilterAll        = "all"
+	TaskFilterPending    = "pending"
+	TaskFilterFailed     = "failed"
+	TaskFilterCanceled   = "canceled"
+	TaskFilterDownloaded = "downloaded"
+)
+
+const (
 	TaskOptionStart   = "start"
 	TaskOptionPause   = "pause"
 	TaskOptionDelete  = "delete"
@@ -35,7 +43,6 @@ var ErrGetSettings = httpDownloadServer.Error{Code: http.StatusInternalServerErr
 
 var ErrInputUrl = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入地址有误"}
 var ErrIncompleteFile = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "文件不完整"}
-
 
 func Migration(db *gorm.DB) error {
 	return db.AutoMigrate(
