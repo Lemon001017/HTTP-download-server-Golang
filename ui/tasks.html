@@ -26,7 +26,7 @@
             tasks: {},
             taskData: [],
             checkValue: [],
-            optionValue: 'ALL',
+            optionValue: 'All',
             runningTask: [],
             showModal: false,
             showPause: false,
@@ -63,11 +63,7 @@
 
             async fetchData() {
                 let data = {
-                    pos: this.pos,
-                    limit: this.limit,
-                    currentPage: this.currentPage,
                     status: this.optionValue,
-
                 }
                 const resp = await fetchTasks(data)
                 console.log(resp)
@@ -94,7 +90,7 @@
                 await this.fetchData()
 
             },
-            // 下面这部分 要是多选的时候，每一个的状态都要发生变化，用sse去获取每一个的状态
+
             async pauseTaskDownload(ids) {
                 if (ids.length === 0) {
                     return
@@ -150,9 +146,9 @@
                 this.currentPage = 1
                 this.optionValue = optionValue
                 let data = {
-                    pos: this.pos,
-                    limit: this.limit,
-                    currentPage: this.currentPage,
+                    // pos: this.pos,
+                    // limit: this.limit,
+                    // currentPage: this.currentPage,
                     status: this.optionValue
                 }
                 if (optionValue === 'All') {

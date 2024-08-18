@@ -1,22 +1,20 @@
 // const BASE_URL = "http://118.25.40.30:8081"
 const BASE_URL = "http://localhost:8000"
-// async function fetchTasks(params) {
+async function fetchTasks(status) {
+    const resp = await fetch(`${BASE_URL}/api/task/list`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(status) 
+    })
+    const result = await resp.json()
 
-//     const resp = await fetch(`${BASE_URL}/api/task/get_tasks`, {
-//         method: "POST",
-//         headers: {
-//             "Content-Type": "application/x-www-form-urlencoded"
-//         },
-//         body: `currentPage=${params.currentPage}&pageSize=${params.limit}&filter=${params.status}`
-
-//     })
-//     const result = await resp.json()
-
-//     return {
-//         total: result?.data?.totalCount,
-//         items: result?.data?.data
-//     }
-// }
+    return {
+        total: result?.data?.totalCount,
+        items: result?.data?.data
+    }
+}
 
 
 // 对任务的状态进行过滤选择,如果是all 的情况下，就返回所有的数据，默认是all 的情况
