@@ -50,3 +50,12 @@ func UpdateTask(db *gorm.DB, task *Task) error {
 		"updated_at":       time.Now(),
 	}).Error
 }
+
+func GetTaskById(db *gorm.DB, id string) (*Task, error) {
+	var task Task
+	err := db.Where("id = ?", id).First(&task).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}

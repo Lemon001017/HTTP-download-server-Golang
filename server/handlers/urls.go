@@ -32,6 +32,7 @@ func (h *Handlers) Register(engine *gin.Engine) {
 	r.POST("/settings/:userId", h.handleSaveSettings)
 	r.GET("/settings/:userId", h.handleGetSettings)
 	r.POST("/task/submit", h.handleSubmit)
+	r.POST("/task/pause/:key", h.handlePause)
 	r.GET("/event/:key", h.handleSSE)
 	apidocs.RegisterHandler(engine.Group("/api/docs"), h.GetDocs(), nil)
 }
