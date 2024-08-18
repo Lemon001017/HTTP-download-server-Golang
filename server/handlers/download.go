@@ -75,7 +75,6 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		task.Chunk[i] = models.Chunk{
 			Index:    i,
 			Url:      task.Url,
-			FileSize: fileSize,
 			Start:    int(start),
 			End:      int(end),
 			Done:     false,
@@ -101,7 +100,7 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		task.Status = models.TaskStatusFailed
 		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
 	}
-	
+
 	err = models.UpdateTask(h.db, task)
 	if err != nil {
 		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
@@ -153,20 +152,8 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 	task.TotalDownloaded += n
 	h.mu.Unlock()
 
-	elapsedTime := time.Since(startTime).Seconds()
-	speed := math.Round((float64(task.TotalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
-	progress := math.Round((float64(task.TotalDownloaded)/float64(chunk.FileSize)*100)*10) / 10
-	remainingTime := math.Round((float64((chunk.FileSize-task.TotalDownloaded)/1024/1024)/speed)*10) / 10
-
+	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
 	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
-
-	task.Progress = progress
-	task.Speed = speed
-	task.RemainingTime = remainingTime
-	err = models.UpdateTask(h.db, task)
-	if err != nil {
-		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-	}
 
 	es.Emit(DownloadProgress{
 		ID:            task.ID,
@@ -194,7 +181,7 @@ func (h *Handlers) initTask(url, key string) (*models.Task, error) {
 		ID:              key,
 		Name:            fileName,
 		Url:             url,
-		Size:            float64(fileSize),
+		Size:            fileSize,
 		SavePath:        outputPath,
 		FileType:        filepath.Ext(fileName),
 		Status:          models.TaskStatusDownloading,
@@ -299,6 +286,22 @@ func extractFileName(resp *http.Response, downloadURL string) string {
 		fileName = "unknown_file"
 	}
 	return fileName
+}
+
+func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time) (float64, float64, float64) {
+	elapsedTime := time.Since(startTime).Seconds()
+	speed := math.Round((float64(task.TotalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
+	progress := math.Round((float64(task.TotalDownloaded)/float64(task.Size)*100)*10) / 10
+	remainingTime := math.Round((float64((task.Size-task.TotalDownloaded)/1024/1024)/speed)*10) / 10
+
+	task.Progress = progress
+	task.Speed = speed
+	task.RemainingTime = remainingTime
+	err := models.UpdateTask(h.db, task)
+	if err != nil {
+		carrot.Error("update task error", "id:", task.ID, "url:", task.Url, "err:", err)
+	}
+	return speed, progress, remainingTime
 }
 
 func (h *Handlers) handlePause(c *gin.Context) {
