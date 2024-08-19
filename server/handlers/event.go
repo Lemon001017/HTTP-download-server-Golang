@@ -57,6 +57,7 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 			eventSource.lastTime = time.Now()
 			byteData, _ := json.Marshal(data)
 			c.SSEvent("message", string(byteData))
+			carrot.Info("data:", string(byteData))
 			return true
 		}
 	})
@@ -65,6 +66,36 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 func (h *Handlers) createEventSource() *EventSource {
 	ctx, cancel := context.WithCancel(context.Background())
 	key := carrot.RandText(8)
+
+	eventSource := &EventSource{
+		lastTime:  time.Now(),
+		cancel:    cancel,
+		ctx:       ctx,
+		eventChan: make(chan any, 10),
+		key:       key,
+	}
+	h.eventSources.Store(key, eventSource)
+
+	go func() {
+		defer h.cleanEventSource(key)
+		for {
+			select {
+			case <-ctx.Done():
+				carrot.Info("user cancel download")
+				return
+			case <-time.After(1 * time.Minute):
+				if time.Since(eventSource.lastTime) > 30*time.Minute {
+					carrot.Info("sse timeout")
+					return
+				}
+			}
+		}
+	}()
+	return eventSource
+}
+
+func (h *Handlers) createEventSourceWithKey(key string) *EventSource {
+	ctx, cancel := context.WithCancel(context.Background())
 
 	eventSource := &EventSource{
 		lastTime:  time.Now(),

@@ -89,18 +89,7 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 	}
 	h.wg.Wait()
 
-	if task.TotalDownloaded == task.Size {
-		task.Status = models.TaskStatusDownloaded
-		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
-	} else {
-		task.Status = models.TaskStatusFailed
-		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
-	}
-
-	err = models.UpdateTask(h.db, task)
-	if err != nil {
-		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-	}
+	h.updateTaskStatus(task, es)
 }
 
 func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource, startTime time.Time, task *models.Task) {
@@ -300,6 +289,7 @@ func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time)
 	return speed, progress, remainingTime
 }
 
+// =Pause download
 func (h *Handlers) handlePause(c *gin.Context) {
 	var ids []string
 	err := c.ShouldBindJSON(&ids)
@@ -326,4 +316,111 @@ func (h *Handlers) handlePause(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "pause download"})
+}
+
+// Resume download
+func (h *Handlers) handleResume(c *gin.Context) {
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	tasks, err := models.GetTaskByIds(h.db, ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	startTime := time.Now()
+
+	taskPool, _ := ants.NewPoolWithFunc(len(tasks), func(t interface{}) {
+		h.resumeTask(t.(*models.Task), startTime)
+	})
+	defer taskPool.Release()
+
+	for _, task := range tasks {
+		h.wg.Add(1)
+		_ = taskPool.Invoke(&task)
+	}
+
+	h.wg.Wait()
+}
+
+func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
+	defer h.wg.Done()
+
+	es := h.createEventSourceWithKey(task.ID)
+
+	outputFile, err := os.OpenFile(task.SavePath, os.O_RDWR|os.O_APPEND, 0666)
+	if err != nil {
+		carrot.Error("error opening existing file", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+		return
+	}
+	defer outputFile.Close()
+
+	// Create a pool of goroutines for chunk downloads
+	chunkPool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
+		h.downloadChunk(&task.Chunk[i.(int)], outputFile, es, startTime, task)
+	})
+	defer chunkPool.Release()
+
+	task.Status = models.TaskStatusDownloading
+	if err := models.UpdateTask(h.db, task); err != nil {
+		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+	}
+
+	for i := 0; i < int(task.ChunkNum); i++ {
+		// Only download chunks that are not completed
+		if !task.Chunk[i].Done {
+			h.wg.Add(1)
+			_ = chunkPool.Invoke(i)
+		}
+	}
+	h.wg.Wait()
+
+	h.updateTaskStatus(task, es)
+}
+
+// Re download
+func (h *Handlers) handleRestart(c *gin.Context) {
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	tasks, err := models.GetTaskByIds(h.db, ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	for _, task := range tasks {
+		es := h.createEventSourceWithKey(task.ID)
+
+		task.Status = models.TaskStatusDownloading
+		if err := models.UpdateTask(h.db, &task); err != nil {
+			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+		}
+
+		h.processDownload(&task, es)
+	}
+
+}
+
+func (h *Handlers) updateTaskStatus(task *models.Task, es *EventSource) {
+	if task.TotalDownloaded == task.Size {
+		task.Status = models.TaskStatusDownloaded
+		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
+	} else {
+		task.Status = models.TaskStatusFailed
+		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
+	}
+
+	if err := models.UpdateTask(h.db, task); err != nil {
+		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+	}
 }

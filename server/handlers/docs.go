@@ -40,7 +40,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			Group:  "httpDownloadServer",
 			Path:   "/api/task/pause",
 			Method: http.MethodPost,
-			Desc:   ``,
+			Desc:   `暂停下载`,
 			Request: &apidocs.DocField{
 				Fields: []apidocs.DocField{
 					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表"},
@@ -49,6 +49,28 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			Response: &apidocs.DocField{
 				Fields: []apidocs.DocField{
 					{Name: "ok", Type: apidocs.TYPE_STRING},
+				},
+			},
+		},
+		{
+			Group:  "httpDownloadServer",
+			Path:   "/api/task/resume",
+			Method: http.MethodPost,
+			Desc:   `恢复下载`,
+			Request: &apidocs.DocField{
+				Fields: []apidocs.DocField{
+					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表"},
+				},
+			},
+		},
+		{
+			Group:  "httpDownloadServer",
+			Path:   "/api/task/resume",
+			Method: http.MethodPost,
+			Desc:   `重新下载`,
+			Request: &apidocs.DocField{
+				Fields: []apidocs.DocField{
+					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表"},
 				},
 			},
 		},

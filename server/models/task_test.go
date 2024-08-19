@@ -48,12 +48,12 @@ func TestUpdateTask(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestGetTaskById(t *testing.T) {
+func TestGetTaskByIds(t *testing.T) {
 	db := createTestDB()
 	db.Create(&Task{
 		ID:            "123",
 		Name:          "test",
-		Url:           "http://test.com",
+		Url:           "http://test1.com",
 		SavePath:      "/tmp/test",
 		Threads:       1,
 		Status:        TaskStatusPending,
@@ -63,11 +63,25 @@ func TestGetTaskById(t *testing.T) {
 		RemainingTime: 10,
 		FileType:      ".zip",
 	})
-	result, err := GetTaskByIds(db, []string{"123"})
+	db.Create(&Task{
+		ID:            "456",
+		Name:          "test",
+		Url:           "http://test2.com",
+		SavePath:      "/tmp/test",
+		Threads:       1,
+		Status:        TaskStatusDownloaded,
+		Size:          1024,
+		Speed:         6.6,
+		Progress:      0.5,
+		RemainingTime: 10,
+		FileType:      ".zip",
+	})
+	result, err := GetTaskByIds(db, []string{"123", "456"})
 	assert.Nil(t, err)
 	assert.Equal(t, result[0].ID, "123")
 	assert.Equal(t, result[0].Name, "test")
-	assert.Equal(t, result[0].Url, "http://test.com")
+	assert.Equal(t, result[0].Url, "http://test1.com")
+	assert.Equal(t, result[1].ID, "456")
 }
 
 func TestGetTasksByStatus(t *testing.T) {
