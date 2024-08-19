@@ -131,9 +131,7 @@ async function fetchFileList(params) {
             },
             body:JSON.stringify({"path":params.path,"type":params.type,"sort":params.sort,"order":params.order})
         })
-       // 
         const data = await resp.json()
-       // 
         return data["data"];
     }
 

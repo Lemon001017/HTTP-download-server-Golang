@@ -105,7 +105,7 @@ func TestGetTasksByStatus(t *testing.T) {
 	assert.Equal(t, len(result), 1)
 	assert.Equal(t, result[0].ID, "456")
 
-	result = GetTasksByStatus(db, "All")
+	result = GetTasksByStatus(db, "all")
 	assert.Equal(t, len(result), 2)
 }
 
@@ -139,5 +139,5 @@ func TestDeleteTasksByIds(t *testing.T) {
 	})
 	err := DeleteTasksByIds(db, []string{"123", "456"})
 	assert.Nil(t, err)
-	assert.Equal(t, len(GetTasksByStatus(db, "All")), 0)
+	assert.Equal(t, len(GetTasksByStatus(db, "all")), 0)
 }

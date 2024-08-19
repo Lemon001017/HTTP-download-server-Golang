@@ -37,7 +37,7 @@ func TestGetTaskList(t *testing.T) {
 		assert.Contains(t, w.Body.String(), `"totalCount":1`)
 		assert.Contains(t, w.Body.String(), `"name":"Test Task 1"`)
 
-		req = []byte(`{"status":"All"}`)
+		req = []byte(`{"status":"all"}`)
 		w = c.Post("POST", "/api/task/list", req)
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), `"totalCount":2`)

@@ -32,7 +32,6 @@ func (h *Handlers) handleGetTaskList(c *gin.Context) {
 	})
 }
 
-// 根据ids删除任务
 func (h *Handlers) handleDelete(c *gin.Context) {
 	var ids []string
 	err := c.ShouldBindJSON(&ids)

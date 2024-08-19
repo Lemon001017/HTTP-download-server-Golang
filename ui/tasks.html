@@ -10,13 +10,11 @@
     <script type="module" src="./assets/alpine.min.js"></script>
     <script nomodule src="./assets/alpine-ie11.min.js" defer></script>
     <script src="./taskApi.js"></script>
-    <!-- <script src="./server.js"></script> -->
 </head>
 
 <script>
     var globalData;
     function initTasks() {
-        //connectSSE()
         globalData = {
             pos: 0,
             limit: 5,
@@ -26,7 +24,7 @@
             tasks: {},
             taskData: [],
             checkValue: [],
-            optionValue: 'All',
+            optionValue: 'all',
             runningTask: [],
             showModal: false,
             showPause: false,
@@ -37,29 +35,12 @@
             async initData() {
                 this.currentPageColor = document.body.getAttribute('data-page-type')
                 this.fetchData()
-                this.connectSSE()
+                // this.connectSSE()
             },
-            // async connectSSE() {
-            //     let eventSource = new EventSource("http://localhost:8000/sse/event");
-            //     eventSource.onmessage = (event) => {
-            //         const data = JSON.parse(event.data);
-            //         const index = this.taskData.findIndex(t => t.id === data.downloadTaskId);
-            //         if (index !== -1) {
-            //             this.taskData[index].progress = data.progress;
-            //             this.taskData[index].downloadSpeed = data.downloadSpeed;
-            //             this.taskData[index].status = data.status;
-            //             this.taskData[index].remainingTime = data.remainingTime;
-            //         }
-            //     }
-            //     eventSource.onopen = () => {
-            //         console.log('sse连接成功');
-            //     };
 
-            //     eventSource.onerror = (error) => {
-            //         console.error(`SSE 连接错误`, error);
-            //         eventSource.close();
-            //     };
-            // },
+            async connectSSE() {
+
+            },
 
             async fetchData() {
                 let data = {
@@ -70,16 +51,50 @@
                 this.tasks = resp
                 this.taskData = resp?.items
             },
+
             async submitData(path) {
-                const resp = await submitDownloadPath(path)
-                if (resp) {
-                    this.showAlert = true
-                    setTimeout(() => {
-                        this.showAlert = false
-                    }, 2000);
+                try {
+                    const resp = await submitDownloadPath(path);
+                    if (resp) {
+                        this.showAlert = true;
+                        setTimeout(() => {
+                            this.showAlert = false;
+                        }, 2000);
+                    }
+                    const key = JSON.parse(resp).key;
+                    console.log(`Key received: ${key}`);
+                    let eventSource = new EventSource(`http://localhost:8000/api/event/${key}`);
+
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            const index = this.taskData.findIndex(t => t.id === data.downloadTaskId);
+                            if (index !== -1) {
+                                this.taskData[index].progress = data.progress;
+                                this.taskData[index].downloadSpeed = data.downloadSpeed;
+                                this.taskData[index].status = data.status;
+                                this.taskData[index].remainingTime = data.remainingTime;
+                            }
+                        } catch (error) {
+                            console.error(`Error parsing SSE message:`, error);
+                        }
+                    };
+
+                    eventSource.onopen = () => {
+                        console.log('SSE connection established.');
+                    };
+
+                    eventSource.onerror = (error) => {
+                        console.error('SSE connection error:', error);
+                        eventSource.close();
+                    };
+
+                    await this.fetchData();
+                } catch (error) {
+                    console.error('Error in submitData:', error);
                 }
-                await this.fetchData()
             },
+
             async refresh(ids) {
                 let result = [];
                 for (let i = 0; i < ids.length; i++) {
@@ -88,7 +103,6 @@
                 await fetchTaskInfo(result)
                 this.checkValue = []
                 await this.fetchData()
-
             },
 
             async pauseTaskDownload(ids) {
@@ -140,28 +154,15 @@
                     await this.fetchData()
                 }
             },
+
             async filterTask(optionValue) {
-                this.pos = 0
-                this.limit = 5
-                this.currentPage = 1
                 this.optionValue = optionValue
                 let data = {
-                    // pos: this.pos,
-                    // limit: this.limit,
-                    // currentPage: this.currentPage,
                     status: this.optionValue
                 }
-                if (optionValue === 'All') {
-                    await this.fetchData()
-                    // async function fetchFilterTasks(filter, pos, limit, currentPage)
-                } else {
-                    let result = await fetchTasks(data);
-
-                    this.tasks = result
-                    //this.taskData = result.items || []
-                    this.taskData = result?.items
-                }
+                await this.fetchData()
             },
+            
             async toNextPage() {
 
                 this.currentPage++
@@ -169,11 +170,13 @@
                 await this.fetchData()
 
             },
+
             async toPrevPage() {
                 this.currentPage--
                 this.pos = (this.currentPage - 1) * this.limit
                 await this.fetchData()
             },
+
             async handlThreads(task, type) {
                 if (type === 'up') {
                     task.threads++
@@ -194,6 +197,7 @@
 
                 }
             },
+
             handleTime(seconds) {
                 if (seconds) {
                     const minutes = Math.floor(seconds / 60);
@@ -210,6 +214,7 @@
                     }
                 }
             },
+
             handleSize(size) {
                 if (size <= 1024) {
                     return size + 'B'
@@ -220,6 +225,10 @@
                 } else {
                     return (size / 1024 / 1024 / 1024).toFixed(2) + 'GB'
                 }
+            },
+
+            handleSpeed(speed) {
+                return speed + 'MB/s'
             }
         }
         return globalData;
@@ -278,11 +287,11 @@
                     <div class="flex space-x-10 items-center">
                         <select name="" id="" class="h-10 rounded capitalize" x-model="optionValue"
                             @change="filterTask(optionValue)">
-                            <option value="ALL">All</option>
-                            <option value="Downloaded"> Downloaded</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Canceled">Canceled</option>
-                            <option value="Downloading">Downloading</option>
+                            <option value="all">All</option>
+                            <option value="downloaded"> Downloaded</option>
+                            <option value="pending">Pending</option>
+                            <option value="canceled">Canceled</option>
+                            <option value="downloading">Downloading</option>
                         </select>
                     </div>
 
@@ -354,7 +363,7 @@
                                             <path stroke-linecap="round" stroke-linejoin="round"
                                                 d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                                         </svg>
-                                        <template x-if="task.status==='Downloading'">
+                                        <template x-if="task.status==='downloading'">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                                 stroke-width="1.5" stroke="currentColor"
                                                 class="w-6 h-6 cursor-pointer hover:text-indigo-600"
@@ -363,7 +372,7 @@
                                                     d="M14.25 9v6m-4.5 0V9M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
                                         </template>
-                                        <template x-if="task.status !='Downloading'">
+                                        <template x-if="task.status !='downloading'">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                                 stroke-width="1.5" stroke="currentColor"
                                                 class="w-6 h-6 cursor-pointer hover:text-indigo-600"
@@ -396,32 +405,30 @@
 
                                 <div class="flex items-center justify-between mt-5">
                                     <div class="flex items-center">
-                                        <!-- <template  x-if="task.downloadSpeed"> -->
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                                 stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-teal-500">
                                                 <path stroke-linecap="round" stroke-linejoin="round"
                                                     d="M15.75 17.25L12 21m0 0l-3.75-3.75M12 21V3" />
                                             </svg>
-                                            <span x-text="task.downloadSpeed"></span>
+                                            <span x-text="handleSpeed(task.speed)"></span>
                                             <span class="mx-2 text-gray-600">/</span>
-                                        <!-- </template> -->
-                                        <span x-text="task?.size"></span>
+                                        <span x-text="handleSize(task.size)"></span>
                                     </div>
 
                                     <div class="flex">
                                         <template
-                                            x-if="task.status ==='Canceled' || task.status ==='Pending'">
+                                            x-if="task.status ==='canceled' || task.status ==='pending'">
                                             <span x-text="task.status" class="capitalize"></span>
                                         </template>
 
-                                        <template x-if="task.status ==='Downloading'">
+                                        <template x-if="task.status ==='downloading'">
                                             <div class="flex items-center space-x-2">
                                                 <span>Remaining</span>
                                                 <span x-text="handleTime(Math.floor(task.remainingTime))"></span>
                                             </div>
                                         </template>
 
-                                        <template x-if="task.status ==='Downloaded'">
+                                        <template x-if="task.status ==='downloaded'">
                                             <div class="flex items-center space-x-2">
                                                 <span>Downloaded</span>
                                             </div>
@@ -435,7 +442,7 @@
                                                 d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
 
-                                        <p x-text="new Date(task?.gmtCreated).toLocaleString()"
+                                        <p x-text="new Date(task?.createdAt).toLocaleString()"
                                             class="text-sm text-gray-500"></p>
                                     </div>
                                 </div>
