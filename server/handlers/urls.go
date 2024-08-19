@@ -13,7 +13,6 @@ import (
 type Handlers struct {
 	db           *gorm.DB
 	eventSources sync.Map
-	wg           sync.WaitGroup
 	mu           sync.Mutex
 	client       *http.Client
 }

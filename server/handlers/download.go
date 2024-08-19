@@ -65,7 +65,6 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		carrot.Error("create tempFile error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
 		return
 	}
-	defer outputFile.Close()
 
 	for i := 0; i < int(task.ChunkNum); i++ {
 		start := int64(i) * task.ChunkSize
@@ -81,23 +80,23 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 
 	// Create a pool of goroutines
 	pool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
-		h.downloadChunk(&task.Chunk[i.(int)], outputFile, es, startTime, task)
+		err := h.downloadChunk(&task.Chunk[i.(int)], outputFile, es, startTime, task)
+		if err != nil {
+			outputFile.Close()
+		}
 	})
 	defer pool.Release()
 
 	for i := 0; i < int(task.ChunkNum); i++ {
-		h.wg.Add(1)
 		_ = pool.Invoke(i)
 	}
-	h.wg.Wait()
 }
 
-func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource, startTime time.Time, task *models.Task) {
-	defer h.wg.Done()
+func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource, startTime time.Time, task *models.Task) error {
 	req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
 	if err != nil {
 		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
-		return
+		return err
 	}
 	req = req.WithContext(es.ctx)
 
@@ -108,34 +107,34 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 	resp, err := h.client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			carrot.Info("download canceled", "key:", es.key, "url:", chunk.Url)
-			return
+			return err
 		}
 		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent {
 		carrot.Error("Failed to download file", "key:", es.key, "url:", chunk.Url, "status:", resp.StatusCode)
-		return
+		return err
 	}
 
 	buf := make([]byte, 2048)
 
 	h.mu.Lock()
 	_, err = outputFile.Seek(int64(chunk.Start), 0)
+
 	if err != nil {
-		carrot.Error("seek error", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return
+		h.mu.Unlock()
+		return canIgnoreError("seek error", err, es, chunk)
 	}
 
 	n, err := io.CopyBuffer(outputFile, resp.Body, buf)
 	if err != nil {
-		carrot.Error("Failed to copy HTTP response body", "key:", es.key, "url:", chunk.Url, "err:", err)
-		return
+		h.mu.Unlock()
+		return canIgnoreError("copy error", err, es, chunk)
 	}
-
+	
 	chunk.Done = true
 	task.TotalDownloaded += n
 	h.mu.Unlock()
@@ -145,6 +144,7 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		task.Status = models.TaskStatusDownloaded
 		task.Speed = 0
 		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
+		outputFile.Close()
 	}
 	_ = models.UpdateTask(h.db, task)
 
@@ -158,6 +158,7 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		Speed:         speed,
 		RemainingTime: remainingTime},
 	)
+	return nil
 }
 
 func (h *Handlers) initOneTask(url, key string) (*models.Task, error) {
@@ -220,22 +221,12 @@ func (h *Handlers) handlePause(c *gin.Context) {
 				return
 			}
 
-			v, ok := h.eventSources.LoadAndDelete(task.ID)
-			if !ok {
-				return
-			}
-
-			eventSource, ok := v.(*EventSource)
-			if !ok {
-				return
-			}
-			eventSource.cancel()
+			h.cleanEventSource(task.ID)
 		} else {
 			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloading)
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "pause download"})
 }
 
 // Resume download
@@ -266,16 +257,12 @@ func (h *Handlers) handleResume(c *gin.Context) {
 				carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotCanceled)
 				return
 			}
-			h.wg.Add(1)
 			taskPool.Invoke(task)
 		}
-		h.wg.Wait()
 	}()
 }
 
 func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
-	defer h.wg.Done()
-
 	es := h.createEventSourceWithKey(task.ID)
 
 	outputFile, err := os.OpenFile(task.SavePath, os.O_RDWR|os.O_APPEND, 0666)
@@ -297,11 +284,11 @@ func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
 	for i := 0; i < int(task.ChunkNum); i++ {
 		// Only download chunks that are not completed
 		if !task.Chunk[i].Done {
-			h.wg.Add(1)
+			// h.wg.Add(1)
 			_ = chunkPool.Invoke(i)
 		}
 	}
-	h.wg.Wait()
+	// h.wg.Wait()
 }
 
 // Re download
@@ -319,28 +306,24 @@ func (h *Handlers) handleRestart(c *gin.Context) {
 		return
 	}
 
-	go func() {
-		for _, task := range tasks {
-			if task.Status != models.TaskStatusDownloaded {
-				carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloaded)
-				return
-			}
-			es := h.createEventSourceWithKey(task.ID)
-
-			task.Status = models.TaskStatusPending
-			task.TotalDownloaded = 0
-			task.Progress = 0
-			task.Speed = 0
-			task.Chunk = make([]models.Chunk, task.ChunkNum)
-			if err := models.UpdateTask(h.db, &task); err != nil {
-				carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-			}
-
-			go func() {
-				h.processDownload(&task, es)
-			}()
+	for _, task := range tasks {
+		if task.Status != models.TaskStatusDownloaded {
+			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloaded)
+			return
 		}
-	}()
+		es := h.createEventSourceWithKey(task.ID)
+
+		task.Status = models.TaskStatusPending
+		task.TotalDownloaded = 0
+		task.Progress = 0
+		task.Speed = 0
+		task.Chunk = make([]models.Chunk, task.ChunkNum)
+		_ = models.UpdateTask(h.db, &task)
+
+		go func() {
+			h.processDownload(&task, es)
+		}()
+	}
 }
 
 func extractFileName(resp *http.Response, downloadURL string) string {
@@ -445,4 +428,12 @@ func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time)
 		carrot.Error("update task error", "id:", task.ID, "url:", task.Url, "err:", err)
 	}
 	return speed, progress, remainingTime
+}
+
+func canIgnoreError(operation string, err error, es *EventSource, chunk *models.Chunk) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, os.ErrClosed) {
+		return err
+	}
+	carrot.Error(operation, "key:", es.key, "url:", chunk.Url, "err:", err)
+	return err
 }
