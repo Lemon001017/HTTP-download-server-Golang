@@ -26,7 +26,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			Group:   "httpDownloadServer",
 			Path:    "/api/task/list",
 			Method:  http.MethodPost,
-			Desc:    ``,
+			Desc:    `获取任务列表`,
 			Request: apidocs.GetDocDefine(&FilterRequest{}),
 			Response: &apidocs.DocField{
 				Fields: []apidocs.DocField{
@@ -78,7 +78,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			Group:  "httpDownloadServer",
 			Path:   "/api/task/delete",
 			Method: http.MethodPost,
-			Desc:   ``,
+			Desc:   `删除任务`,
 			Request: &apidocs.DocField{
 				Fields: []apidocs.DocField{
 					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表"},
@@ -94,7 +94,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			Group:  "httpDownloadServer",
 			Path:   "/api/event/:key",
 			Method: http.MethodGet,
-			Desc:   ``,
+			Desc:   `sse接口`,
 			Request: &apidocs.DocField{
 				Fields: []apidocs.DocField{
 					{Name: "key", Type: apidocs.TYPE_STRING, Desc: "key, 这个是URL参数"},
@@ -102,7 +102,6 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			},
 			Response: &apidocs.DocField{
 				Type: "object",
-				Desc: "SSE接口为通用长链接接口，返回数据类型不同",
 			},
 		},
 		{
