@@ -88,13 +88,10 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		_ = pool.Invoke(i)
 	}
 	h.wg.Wait()
-
-	h.updateTaskStatus(task, es)
 }
 
 func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *EventSource, startTime time.Time, task *models.Task) {
 	defer h.wg.Done()
-
 	req, err := http.NewRequest(http.MethodGet, chunk.Url, nil)
 	if err != nil {
 		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", chunk.Url)
@@ -137,6 +134,14 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 	task.TotalDownloaded += n
 	h.mu.Unlock()
 
+	task.Status = models.TaskStatusDownloading
+	if task.TotalDownloaded == task.Size {
+		task.Status = models.TaskStatusDownloaded
+		task.Speed = 0
+		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
+	}
+	_ = models.UpdateTask(h.db, task)
+
 	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
 	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
 
@@ -169,8 +174,8 @@ func (h *Handlers) initOneTask(url, key string) (*models.Task, error) {
 		Size:            fileSize,
 		SavePath:        outputPath,
 		FileType:        filepath.Ext(fileName),
-		Status:          models.TaskStatusDownloading,
 		Threads:         4,
+		Status:          models.TaskStatusPending,
 		ChunkNum:        numChunks,
 		ChunkSize:       chunkSize,
 		Chunk:           make([]models.Chunk, numChunks),
@@ -252,27 +257,6 @@ func (h *Handlers) getFileInfo(url string, outputDir string) (int64, string, str
 	return fileSize, outputPath, fileName, nil
 }
 
-func extractFileName(resp *http.Response, downloadURL string) string {
-	if contentDisposition := resp.Header.Get("Content-Disposition"); contentDisposition != "" {
-		_, params, err := mime.ParseMediaType(contentDisposition)
-		if err == nil && params["filename"] != "" {
-			return params["filename"]
-		}
-	}
-
-	parsedURL, err := url.Parse(downloadURL)
-	if err != nil {
-		parsedURL.Path = "/unknown"
-	}
-
-	re := regexp.MustCompile(`[^\/]+\.[a-zA-Z0-9]+$`)
-	fileName := re.FindString(parsedURL.Path)
-	if fileName == "" {
-		fileName = "unknown_file"
-	}
-	return fileName
-}
-
 func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time) (float64, float64, float64) {
 	elapsedTime := time.Since(startTime).Seconds()
 	speed := math.Round((float64(task.TotalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
@@ -289,7 +273,7 @@ func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time)
 	return speed, progress, remainingTime
 }
 
-// =Pause download
+// Pause download
 func (h *Handlers) handlePause(c *gin.Context) {
 	var ids []string
 	err := c.ShouldBindJSON(&ids)
@@ -341,12 +325,17 @@ func (h *Handlers) handleResume(c *gin.Context) {
 	})
 	defer taskPool.Release()
 
-	for _, task := range tasks {
-		h.wg.Add(1)
-		_ = taskPool.Invoke(&task)
-	}
+	go func() {
+		for _, task := range tasks {
+			if task.Status == models.TaskStatusCanceled {
+				h.wg.Add(1)
+				taskPool.Invoke(task)
+			}
+		}
 
-	h.wg.Wait()
+		h.wg.Wait()
+	}()
+	c.JSON(http.StatusOK, gin.H{"message": "resume download"})
 }
 
 func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
@@ -380,8 +369,6 @@ func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
 		}
 	}
 	h.wg.Wait()
-
-	h.updateTaskStatus(task, es)
 }
 
 // Re download
@@ -399,29 +386,45 @@ func (h *Handlers) handleRestart(c *gin.Context) {
 		return
 	}
 
-	for _, task := range tasks {
-		es := h.createEventSourceWithKey(task.ID)
+	go func() {
+		for _, task := range tasks {
+			es := h.createEventSourceWithKey(task.ID)
 
-		task.Status = models.TaskStatusDownloading
-		if err := models.UpdateTask(h.db, &task); err != nil {
-			carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+			task.Status = models.TaskStatusPending
+			task.TotalDownloaded = 0
+			task.Progress = 0
+			task.Speed = 0
+			task.Chunk = make([]models.Chunk, task.ChunkNum)
+			if err := models.UpdateTask(h.db, &task); err != nil {
+				carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+			}
+
+			go func() {
+				h.processDownload(&task, es)
+			}()
 		}
+	}()
 
-		h.processDownload(&task, es)
-	}
-
+	c.JSON(http.StatusOK, gin.H{"message": "restart download"})
 }
 
-func (h *Handlers) updateTaskStatus(task *models.Task, es *EventSource) {
-	if task.TotalDownloaded == task.Size {
-		task.Status = models.TaskStatusDownloaded
-		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
-	} else {
-		task.Status = models.TaskStatusFailed
-		carrot.Error("Download failed", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", models.ErrIncompleteFile)
+func extractFileName(resp *http.Response, downloadURL string) string {
+	if contentDisposition := resp.Header.Get("Content-Disposition"); contentDisposition != "" {
+		_, params, err := mime.ParseMediaType(contentDisposition)
+		if err == nil && params["filename"] != "" {
+			return params["filename"]
+		}
 	}
 
-	if err := models.UpdateTask(h.db, task); err != nil {
-		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+	parsedURL, err := url.Parse(downloadURL)
+	if err != nil {
+		parsedURL.Path = "/unknown"
 	}
+
+	re := regexp.MustCompile(`[^\/]+\.[a-zA-Z0-9]+$`)
+	fileName := re.FindString(parsedURL.Path)
+	if fileName == "" {
+		fileName = "unknown_file"
+	}
+	return fileName
 }

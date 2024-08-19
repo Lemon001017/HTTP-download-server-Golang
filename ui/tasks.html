@@ -206,11 +206,11 @@
                     const remainingMinutes = minutes % 60;
 
                     if (hours > 0) {
-                        return `${hours}时${remainingMinutes}分${Math.ceil(remainingSeconds)}秒`;
+                        return `${hours}h${remainingMinutes}min${Math.ceil(remainingSeconds)}s`;
                     } else if (minutes > 0) {
-                        return `${minutes}分${Math.ceil(remainingSeconds)}秒`;
+                        return `${minutes}min${Math.ceil(remainingSeconds)}s`;
                     } else {
-                        return `${Math.ceil(seconds)}秒`;
+                        return `${Math.ceil(seconds)}s`;
                     }
                 }
             },

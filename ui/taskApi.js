@@ -57,7 +57,7 @@ async function changeThreads(params) {
 async function fetchTaskInfo(ids) {
 
     let isRefresh = false
-    const resp = await fetch(BASE_URL + "/api/task/refresh", {
+    const resp = await fetch(BASE_URL + "/api/task/restart", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
