@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"HTTP-download-server/server/models"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -105,6 +107,10 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 
 	resp, err := h.client.Do(req)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			carrot.Info("download canceled", "key:", es.key, "url:", chunk.Url)
+			return
+		}
 		carrot.Error("Failed to send HTTP request", "key:", es.key, "url:", chunk.Url, "err:", err)
 		return
 	}
@@ -190,6 +196,174 @@ func (h *Handlers) initOneTask(url, key string) (*models.Task, error) {
 	return &task, nil
 }
 
+// Pause download
+func (h *Handlers) handlePause(c *gin.Context) {
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	tasks, err := models.GetTaskByIds(h.db, ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	for _, task := range tasks {
+		if task.Status == models.TaskStatusDownloading {
+			task.Status = models.TaskStatusCanceled
+			err = models.UpdateTask(h.db, &task)
+			if err != nil {
+				carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+				return
+			}
+
+			v, ok := h.eventSources.LoadAndDelete(task.ID)
+			if !ok {
+				return
+			}
+
+			eventSource, ok := v.(*EventSource)
+			if !ok {
+				return
+			}
+			eventSource.cancel()
+		} else {
+			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloading)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "pause download"})
+}
+
+// Resume download
+func (h *Handlers) handleResume(c *gin.Context) {
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	tasks, err := models.GetTaskByIds(h.db, ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	startTime := time.Now()
+
+	taskPool, _ := ants.NewPoolWithFunc(len(tasks), func(t interface{}) {
+		h.resumeTask(t.(*models.Task), startTime)
+	})
+	defer taskPool.Release()
+
+	go func() {
+		for _, task := range tasks {
+			if task.Status != models.TaskStatusCanceled {
+				carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotCanceled)
+				return
+			}
+			h.wg.Add(1)
+			taskPool.Invoke(task)
+		}
+		h.wg.Wait()
+	}()
+}
+
+func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
+	defer h.wg.Done()
+
+	es := h.createEventSourceWithKey(task.ID)
+
+	outputFile, err := os.OpenFile(task.SavePath, os.O_RDWR|os.O_APPEND, 0666)
+	if err != nil {
+		carrot.Error("error opening existing file", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+		return
+	}
+	defer outputFile.Close()
+
+	// Create a pool of goroutines for chunk downloads
+	chunkPool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
+		h.downloadChunk(&task.Chunk[i.(int)], outputFile, es, startTime, task)
+	})
+	defer chunkPool.Release()
+
+	task.Status = models.TaskStatusDownloading
+	_ = models.UpdateTask(h.db, task)
+
+	for i := 0; i < int(task.ChunkNum); i++ {
+		// Only download chunks that are not completed
+		if !task.Chunk[i].Done {
+			h.wg.Add(1)
+			_ = chunkPool.Invoke(i)
+		}
+	}
+	h.wg.Wait()
+}
+
+// Re download
+func (h *Handlers) handleRestart(c *gin.Context) {
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	tasks, err := models.GetTaskByIds(h.db, ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	go func() {
+		for _, task := range tasks {
+			if task.Status != models.TaskStatusDownloaded {
+				carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloaded)
+				return
+			}
+			es := h.createEventSourceWithKey(task.ID)
+
+			task.Status = models.TaskStatusPending
+			task.TotalDownloaded = 0
+			task.Progress = 0
+			task.Speed = 0
+			task.Chunk = make([]models.Chunk, task.ChunkNum)
+			if err := models.UpdateTask(h.db, &task); err != nil {
+				carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+			}
+
+			go func() {
+				h.processDownload(&task, es)
+			}()
+		}
+	}()
+}
+
+func extractFileName(resp *http.Response, downloadURL string) string {
+	if contentDisposition := resp.Header.Get("Content-Disposition"); contentDisposition != "" {
+		_, params, err := mime.ParseMediaType(contentDisposition)
+		if err == nil && params["filename"] != "" {
+			return params["filename"]
+		}
+	}
+
+	parsedURL, err := url.Parse(downloadURL)
+	if err != nil {
+		parsedURL.Path = "/unknown"
+	}
+
+	re := regexp.MustCompile(`[^\/]+\.[a-zA-Z0-9]+$`)
+	fileName := re.FindString(parsedURL.Path)
+	if fileName == "" {
+		fileName = "unknown_file"
+	}
+	return fileName
+}
+
 func (h *Handlers) getSettingsInfo() (string, float64, uint, error) {
 	settings, err := models.GetSettings(h.db, 1)
 	if err != nil {
@@ -271,160 +445,4 @@ func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time)
 		carrot.Error("update task error", "id:", task.ID, "url:", task.Url, "err:", err)
 	}
 	return speed, progress, remainingTime
-}
-
-// Pause download
-func (h *Handlers) handlePause(c *gin.Context) {
-	var ids []string
-	err := c.ShouldBindJSON(&ids)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	tasks, err := models.GetTaskByIds(h.db, ids)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	for _, task := range tasks {
-		if task.Status == models.TaskStatusDownloading {
-			task.Status = models.TaskStatusCanceled
-			err = models.UpdateTask(h.db, &task)
-			if err != nil {
-				carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
-				return
-			}
-			h.cleanEventSource(task.ID)
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "pause download"})
-}
-
-// Resume download
-func (h *Handlers) handleResume(c *gin.Context) {
-	var ids []string
-	err := c.ShouldBindJSON(&ids)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	tasks, err := models.GetTaskByIds(h.db, ids)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	startTime := time.Now()
-
-	taskPool, _ := ants.NewPoolWithFunc(len(tasks), func(t interface{}) {
-		h.resumeTask(t.(*models.Task), startTime)
-	})
-	defer taskPool.Release()
-
-	go func() {
-		for _, task := range tasks {
-			if task.Status == models.TaskStatusCanceled {
-				h.wg.Add(1)
-				taskPool.Invoke(task)
-			}
-		}
-
-		h.wg.Wait()
-	}()
-	c.JSON(http.StatusOK, gin.H{"message": "resume download"})
-}
-
-func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
-	defer h.wg.Done()
-
-	es := h.createEventSourceWithKey(task.ID)
-
-	outputFile, err := os.OpenFile(task.SavePath, os.O_RDWR|os.O_APPEND, 0666)
-	if err != nil {
-		carrot.Error("error opening existing file", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-		return
-	}
-	defer outputFile.Close()
-
-	// Create a pool of goroutines for chunk downloads
-	chunkPool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
-		h.downloadChunk(&task.Chunk[i.(int)], outputFile, es, startTime, task)
-	})
-	defer chunkPool.Release()
-
-	task.Status = models.TaskStatusDownloading
-	if err := models.UpdateTask(h.db, task); err != nil {
-		carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-	}
-
-	for i := 0; i < int(task.ChunkNum); i++ {
-		// Only download chunks that are not completed
-		if !task.Chunk[i].Done {
-			h.wg.Add(1)
-			_ = chunkPool.Invoke(i)
-		}
-	}
-	h.wg.Wait()
-}
-
-// Re download
-func (h *Handlers) handleRestart(c *gin.Context) {
-	var ids []string
-	err := c.ShouldBindJSON(&ids)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	tasks, err := models.GetTaskByIds(h.db, ids)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	go func() {
-		for _, task := range tasks {
-			es := h.createEventSourceWithKey(task.ID)
-
-			task.Status = models.TaskStatusPending
-			task.TotalDownloaded = 0
-			task.Progress = 0
-			task.Speed = 0
-			task.Chunk = make([]models.Chunk, task.ChunkNum)
-			if err := models.UpdateTask(h.db, &task); err != nil {
-				carrot.Error("update task error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-			}
-
-			go func() {
-				h.processDownload(&task, es)
-			}()
-		}
-	}()
-
-	c.JSON(http.StatusOK, gin.H{"message": "restart download"})
-}
-
-func extractFileName(resp *http.Response, downloadURL string) string {
-	if contentDisposition := resp.Header.Get("Content-Disposition"); contentDisposition != "" {
-		_, params, err := mime.ParseMediaType(contentDisposition)
-		if err == nil && params["filename"] != "" {
-			return params["filename"]
-		}
-	}
-
-	parsedURL, err := url.Parse(downloadURL)
-	if err != nil {
-		parsedURL.Path = "/unknown"
-	}
-
-	re := regexp.MustCompile(`[^\/]+\.[a-zA-Z0-9]+$`)
-	fileName := re.FindString(parsedURL.Path)
-	if fileName == "" {
-		fileName = "unknown_file"
-	}
-	return fileName
 }

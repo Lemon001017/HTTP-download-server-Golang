@@ -43,6 +43,9 @@ var ErrGetSettings = httpDownloadServer.Error{Code: http.StatusInternalServerErr
 
 var ErrInputUrl = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入地址有误"}
 var ErrIncompleteFile = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "文件不完整"}
+var ErrStatusNotDownloading = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "任务未下载"}
+var ErrStatusNotDownloaded = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "任务未下载完成"}
+var ErrStatusNotCanceled = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "任务未暂停"}
 
 func Migration(db *gorm.DB) error {
 	return db.AutoMigrate(

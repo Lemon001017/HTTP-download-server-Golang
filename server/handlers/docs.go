@@ -65,7 +65,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 		},
 		{
 			Group:  "httpDownloadServer",
-			Path:   "/api/task/resume",
+			Path:   "/api/task/restart",
 			Method: http.MethodPost,
 			Desc:   `重新下载`,
 			Request: &apidocs.DocField{
