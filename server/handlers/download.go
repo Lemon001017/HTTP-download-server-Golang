@@ -309,7 +309,7 @@ func (h *Handlers) handlePause(c *gin.Context) {
 		return
 	}
 
-	task.Status = models.TaskStatusPending
+	task.Status = models.TaskStatusCanceled
 	err = models.UpdateTask(h.db, task)
 	if err != nil {
 		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
