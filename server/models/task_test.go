@@ -63,14 +63,11 @@ func TestGetTaskById(t *testing.T) {
 		RemainingTime: 10,
 		FileType:      ".zip",
 	})
-	result, err := GetTaskById(db, "123")
+	result, err := GetTaskByIds(db, []string{"123"})
 	assert.Nil(t, err)
-	assert.Equal(t, result.ID, "123")
-	assert.Equal(t, result.Name, "test")
-	assert.Equal(t, result.Url, "http://test.com")
-
-	_, err = GetTaskById(db, "456")
-	assert.NotNil(t, err)
+	assert.Equal(t, result[0].ID, "123")
+	assert.Equal(t, result[0].Name, "test")
+	assert.Equal(t, result[0].Url, "http://test.com")
 }
 
 func TestGetTasksByStatus(t *testing.T) {

@@ -50,14 +50,11 @@ func UpdateTask(db *gorm.DB, task *Task) error {
 	}).Error
 }
 
-// Get one task by id
-func GetTaskById(db *gorm.DB, id string) (*Task, error) {
-	var task Task
-	err := db.Where("id = ?", id).First(&task).Error
-	if err != nil {
-		return nil, err
-	}
-	return &task, nil
+// Get one task by ids
+func GetTaskByIds(db *gorm.DB, ids []string) ([]Task, error) {
+	var tasks []Task
+	err := db.Model(&Task{}).Where("id IN (?)", ids).Find(&tasks).Error
+	return tasks, err
 }
 
 // Get the task list according to the task status

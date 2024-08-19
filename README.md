@@ -31,6 +31,12 @@ cd cmd
 go run  .  -dsn file:dev.db
 ```
 
+### Show api docs
+
+```shell
+http://localhost:8000/api/docs/
+```
+
 ## Web
 
 ### Install the vscode plugin

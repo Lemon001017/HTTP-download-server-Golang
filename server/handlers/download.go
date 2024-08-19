@@ -69,11 +69,11 @@ func (h *Handlers) processDownload(task *models.Task, es *EventSource) {
 		start := int64(i) * task.ChunkSize
 		end := math.Min(float64(start+task.ChunkSize), float64(task.Size)) - 1
 		task.Chunk[i] = models.Chunk{
-			Index:    i,
-			Url:      task.Url,
-			Start:    int(start),
-			End:      int(end),
-			Done:     false,
+			Index: i,
+			Url:   task.Url,
+			Start: int(start),
+			End:   int(end),
+			Done:  false,
 		}
 	}
 
@@ -301,20 +301,29 @@ func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time)
 }
 
 func (h *Handlers) handlePause(c *gin.Context) {
-	key := c.Param("key")
+	var ids []string
+	err := c.ShouldBindJSON(&ids)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
 
-	task, err := models.GetTaskById(h.db, key)
+	tasks, err := models.GetTaskByIds(h.db, ids)
 	if err != nil {
 		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	task.Status = models.TaskStatusCanceled
-	err = models.UpdateTask(h.db, task)
-	if err != nil {
-		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
-		return
+	for _, task := range tasks {
+		if task.Status == models.TaskStatusDownloading {
+			task.Status = models.TaskStatusCanceled
+			err = models.UpdateTask(h.db, &task)
+			if err != nil {
+				carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+				return
+			}
+		}
 	}
-	h.cleanEventSource(key)
+
 	c.JSON(http.StatusOK, gin.H{"message": "pause download"})
 }
