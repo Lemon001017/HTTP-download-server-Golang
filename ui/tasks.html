@@ -61,7 +61,7 @@
                             this.showAlert = false;
                         }, 2000);
                     }
-                    const key = JSON.parse(resp).key;
+                    const key = resp.key;
                     console.log(`Key received: ${key}`);
                     let eventSource = new EventSource(`http://localhost:8000/api/event/${key}`);
 

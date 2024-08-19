@@ -134,7 +134,7 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		h.mu.Unlock()
 		return canIgnoreError("copy error", err, es, chunk)
 	}
-	
+
 	chunk.Done = true
 	task.TotalDownloaded += n
 	h.mu.Unlock()
@@ -284,11 +284,9 @@ func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
 	for i := 0; i < int(task.ChunkNum); i++ {
 		// Only download chunks that are not completed
 		if !task.Chunk[i].Done {
-			// h.wg.Add(1)
 			_ = chunkPool.Invoke(i)
 		}
 	}
-	// h.wg.Wait()
 }
 
 // Re download

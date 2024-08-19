@@ -25,7 +25,7 @@ async function submitDownloadPath(path) {
     })
     const data = await resp.json()
     //connectSSE()
-    return data.data;
+    return data;
 }
 
 async function changeThreads(params) {
