@@ -4,27 +4,27 @@
 
 ## Go
 
-### Download project
+### 1. Download project
 
 ```shell
 git clone https://github.com/Lemon001017/HTTP-download-server.git
-cd server
 ```
 
-### Install dependencies
+### 2. Install dependencies
 
 ```shell
+cd server
 go mod tidy
 go mod download
 ```
 
-### Unit Test
+### 3. Unit Test
 
 ```shell
 go test ./...
 ```
 
-### Run
+### 4. Run
 
 ```shell
 cd cmd
@@ -39,11 +39,29 @@ http://localhost:8000/api/docs/
 
 ## Web
 
-### Install the vscode plugin
+### 1. Install the vscode plugin
 
-Click -> [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) or Search `Live Server` in vscode
+Click -> [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) or Search `Live 
+Server` in vscode
 
-### Run
+### 2. Modify settings.json (Required)
+
+1. enter into Settings
+2. Search `live server settings ignore files`
+3. Click `Edit in settings.json`
+4. Add the following:
+
+```
+"liveServer.settings.ignoreFiles": [
+    "**/server/**/*",
+    "**/*.go",
+    "**/*.db",
+]
+```
+
+5. Restart vscode
+
+### 3. Run
 
 ```shell
 cd ui

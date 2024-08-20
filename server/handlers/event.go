@@ -57,7 +57,6 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 			eventSource.lastTime = time.Now()
 			byteData, _ := json.Marshal(data)
 			c.SSEvent("message", string(byteData))
-			carrot.Info("data:", string(byteData))
 			return true
 		}
 	})

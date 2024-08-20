@@ -123,7 +123,6 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 
 	h.mu.Lock()
 	_, err = outputFile.Seek(int64(chunk.Start), 0)
-
 	if err != nil {
 		h.mu.Unlock()
 		return canIgnoreError("seek error", err, es, chunk)
@@ -139,6 +138,9 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 	task.TotalDownloaded += n
 	h.mu.Unlock()
 
+	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
+	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
+
 	task.Status = models.TaskStatusDownloading
 	if task.TotalDownloaded == task.Size {
 		task.Status = models.TaskStatusDownloaded
@@ -147,9 +149,6 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		outputFile.Close()
 	}
 	_ = models.UpdateTask(h.db, task)
-
-	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
-	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
 
 	es.Emit(DownloadProgress{
 		ID:            task.ID,
