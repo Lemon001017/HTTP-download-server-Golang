@@ -240,7 +240,7 @@ func (h *Handlers) handlePause(c *gin.Context) {
 				carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
 				return
 			}
-
+			
 			h.cleanEventSource(task.ID)
 		} else {
 			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloading)

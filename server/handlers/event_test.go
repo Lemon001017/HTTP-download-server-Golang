@@ -41,12 +41,12 @@ func TestHandleSSE(t *testing.T) {
 
 	eventSource := h.createEventSource()
 
-	// 创建gin.Context
+	// Create gin.Context
 	w := NewNotifyingResponseRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/event/"+eventSource.key, nil)
 
-	// 设置key
+	// Set key
 	c.Params = gin.Params{
 		gin.Param{
 			Key:   "key",
@@ -54,7 +54,7 @@ func TestHandleSSE(t *testing.T) {
 		},
 	}
 
-	// test case: data不为空
+	// test case: data not nil
 	{
 		eventSource.eventChan <- "mock message1"
 		eventSource.eventChan <- "mock message2"
@@ -77,18 +77,17 @@ func TestHandleSSE(t *testing.T) {
 		c.Request = httptest.NewRequest("GET", "/api/event/"+eventSource.key, nil)
 		c.Params = gin.Params{
 			gin.Param{
-				Key:   "key",
 				Value: eventSource.key,
 			},
 		}
+
 		h.handleSSE(c)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	}
 
-	// test case: 客户端取消请求
+	// test case: Client cancel the request
 	{
 		mockEventSource := h.createEventSource()
-		// 创建带取消功能的请求上下文
 		reqCtx, reqCancel := context.WithCancel(c.Request.Context())
 		c.Request = httptest.NewRequest("GET", "/api/event/"+mockEventSource.key, nil).WithContext(reqCtx)
 		c.Params = gin.Params{
@@ -97,16 +96,16 @@ func TestHandleSSE(t *testing.T) {
 				Value: mockEventSource.key,
 			},
 		}
-		// 启动处理SSE的goroutine
+
 		go func() {
 			h.handleSSE(c)
 		}()
 
-		// 模拟客户端在一段时间后取消请求
+		// The client is simulated to cancel the request after some time
 		time.Sleep(time.Millisecond * 200)
 		reqCancel()
 
-		// 检查请求是否被正确取消
+		// Check that the request was correctly canceled
 		assert.Eventually(t, func() bool {
 			return w.Body.String() != ""
 		}, time.Second, time.Millisecond*10)

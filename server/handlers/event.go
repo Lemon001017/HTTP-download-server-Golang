@@ -36,12 +36,12 @@ func (es *EventSource) Emit(event any) {
 func (h *Handlers) handleSSE(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	key := c.Param("key")
-	v, ok := h.eventSources.LoadAndDelete(key)
+	v, ok := h.eventSources.Load(key)
 	if !ok {
 		c.JSON(http.StatusBadRequest, "missing key")
 		return
 	}
-	defer h.cleanEventSource(key)
+
 	eventSource := v.(*EventSource)
 
 	c.Stream(func(w io.Writer) bool {
@@ -104,7 +104,6 @@ func (h *Handlers) createEventSourceWithKey(key string) *EventSource {
 		key:       key,
 	}
 	h.eventSources.Store(key, eventSource)
-
 	go func() {
 		defer h.cleanEventSource(key)
 		for {
@@ -128,7 +127,7 @@ func (h *Handlers) cleanEventSource(key string) {
 	if !ok {
 		return
 	}
-	
+
 	eventSource, ok := v.(*EventSource)
 	if !ok {
 		return
