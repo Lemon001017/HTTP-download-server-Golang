@@ -67,6 +67,7 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 		return
 	}
 
+	// Init chunk info
 	for i := 0; i < int(task.ChunkNum); i++ {
 		start := int64(i) * task.ChunkSize
 		end := math.Min(float64(start+task.ChunkSize), float64(task.Size)) - 1
@@ -86,6 +87,8 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 	req = req.WithContext(es.ctx)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "*/*")
+
+	task.Status = models.TaskStatusDownloading
 
 	// Create a pool of goroutines
 	pool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
@@ -128,6 +131,7 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 	buf := make([]byte, 2048)
 
 	h.mu.Lock()
+
 	_, err = outputFile.Seek(int64(chunk.Start), 0)
 	if err != nil {
 		h.mu.Unlock()
@@ -142,20 +146,9 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 
 	chunk.Done = true
 	task.TotalDownloaded += n
-	
+
 	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
 	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
-	h.mu.Unlock()
-
-	task.Status = models.TaskStatusDownloading
-	if task.TotalDownloaded == task.Size {
-		task.Status = models.TaskStatusDownloaded
-		task.Speed = 0
-		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
-		outputFile.Close()
-		h.cleanEventSource(task.ID)
-	}
-	_ = models.UpdateTask(h.db, task)
 
 	es.Emit(DownloadProgress{
 		ID:            task.ID,
@@ -164,8 +157,27 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 		Speed:         speed,
 		RemainingTime: remainingTime,
 		Status:        task.Status,
-	},
-	)
+	})
+
+	if task.TotalDownloaded == task.Size {
+		task.Status = models.TaskStatusDownloaded
+		es.Emit(DownloadProgress{
+			ID:            task.ID,
+			Name:          task.Name,
+			Progress:      progress,
+			Speed:         speed,
+			RemainingTime: remainingTime,
+			Status:        task.Status,
+		})
+		
+		models.UpdateTask(h.db, task)
+		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
+		outputFile.Close()
+		close(es.eventChan)
+	}
+	models.UpdateTask(h.db, task)
+
+	h.mu.Unlock()
 	return nil
 }
 

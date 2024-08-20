@@ -128,11 +128,12 @@ func (h *Handlers) cleanEventSource(key string) {
 	if !ok {
 		return
 	}
-
+	
 	eventSource, ok := v.(*EventSource)
 	if !ok {
 		return
 	}
+
 	eventSource.cancel()
 	if eventSource.eventChan != nil {
 		close(eventSource.eventChan)
