@@ -11,7 +11,7 @@ Server` in vscode
 
 ### 2. Modify settings.json (Required)
 
-- enter into Settings
+- Enter into Settings
 - Search `live server settings ignore files`
 - Click `Edit in settings.json`
 - Add the following:

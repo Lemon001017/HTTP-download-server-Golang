@@ -30,6 +30,7 @@ type DownloadProgress struct {
 	Progress      float64 `json:"progress"`
 	Speed         float64 `json:"speed"`
 	RemainingTime float64 `json:"remainingTime"`
+	Status        string  `json:"status"`
 }
 
 // submit task
@@ -155,7 +156,9 @@ func (h *Handlers) downloadChunk(chunk *models.Chunk, outputFile *os.File, es *E
 		Name:          task.Name,
 		Progress:      progress,
 		Speed:         speed,
-		RemainingTime: remainingTime},
+		RemainingTime: remainingTime,
+		Status:        task.Status,
+	},
 	)
 	return nil
 }

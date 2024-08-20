@@ -55,11 +55,8 @@
             async submitData(path) {
                 try {
                     const resp = await submitDownloadPath(path);
-                    if (resp) {
+                    if (resp.error == null) {
                         this.showAlert = true;
-                        setTimeout(() => {
-                            this.showAlert = false;
-                        }, 2000);
                     }
                     const key = resp.key;
                     console.log(`Key received: ${key}`);
@@ -68,10 +65,10 @@
                     eventSource.onmessage = (event) => {
                         try {
                             const data = JSON.parse(event.data);
-                            const index = this.taskData.findIndex(t => t.id === data.downloadTaskId);
+                            const index = this.taskData.findIndex(t => t.id === data.id);
                             if (index !== -1) {
                                 this.taskData[index].progress = data.progress;
-                                this.taskData[index].downloadSpeed = data.downloadSpeed;
+                                this.taskData[index].speed = data.speed;
                                 this.taskData[index].status = data.status;
                                 this.taskData[index].remainingTime = data.remainingTime;
                             }
