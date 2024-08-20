@@ -54,7 +54,7 @@ async function changeThreads(params) {
 }
 
 // 重新下载任务的详细信息，ids是一个数组，单个任务，就是一个元素的数组，多个任务就是多个元素的数组，实现同一个接口单量和多量的处理
-async function fetchTaskInfo(ids) {
+async function RestartDownload(ids) {
 
     let isRefresh = false
     const resp = await fetch(BASE_URL + "/api/task/restart", {

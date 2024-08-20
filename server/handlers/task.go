@@ -46,5 +46,5 @@ func (h *Handlers) handleDelete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, "delete success")
+	c.JSON(http.StatusOK, gin.H{"ids": ids})
 }

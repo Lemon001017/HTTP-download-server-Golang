@@ -28,7 +28,6 @@ type Task struct {
 }
 
 type Chunk struct {
-	Url   string
 	Index int
 	Start int
 	End   int

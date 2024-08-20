@@ -73,8 +73,7 @@ func TestDelete(t *testing.T) {
 		req := []byte(`["task1", "task2"]`)
 		w := c.Post("POST", "/api/task/delete", req)
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Body.String(), "delete success")
-
+		
 		var task models.Task
 		db.Where("id = ?", "task1").First(&task)
 		assert.Equal(t, "", task.ID)

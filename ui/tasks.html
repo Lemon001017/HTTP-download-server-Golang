@@ -10,6 +10,7 @@
     <script type="module" src="./assets/alpine.min.js"></script>
     <script nomodule src="./assets/alpine-ie11.min.js" defer></script>
     <script src="./taskApi.js"></script>
+    <!-- <script src="./server.js"> </script> -->
 </head>
 
 <script>
@@ -32,14 +33,37 @@
             currentPageColor: '',
             showAlert: false,
 
+            connectSSE(key) {
+                let eventSource = new EventSource(`http://localhost:8000/api/event/${key}`);
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        const index = this.taskData.findIndex(t => t.id === data.id);
+                        if (index !== -1) {
+                            this.taskData[index].progress = data.progress;
+                            this.taskData[index].speed = data.speed;
+                            this.taskData[index].status = data.status;
+                            this.taskData[index].remainingTime = data.remainingTime;
+                        }
+                    } catch (error) {
+                        console.error(`Error parsing SSE message:`, error);
+                    }
+                };
+
+                eventSource.onopen = () => {
+                    console.log('SSE connection established.');
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error('SSE connection error:', error);
+                    eventSource.close();
+                };
+            },
+
             async initData() {
                 this.currentPageColor = document.body.getAttribute('data-page-type')
                 this.fetchData()
                 // this.connectSSE()
-            },
-
-            async connectSSE() {
-
             },
 
             async fetchData() {
@@ -55,37 +79,15 @@
             async submitData(path) {
                 try {
                     const resp = await submitDownloadPath(path);
-                    if (resp.error == null) {
-                        this.showAlert = true;
+                    if (resp.error != null) {
+                        return
                     }
+                    this.showAlert = true;
+                    setTimeout(() => {
+                        this.showAlert = false;
+                    }, 1000);
                     const key = resp.key;
-                    console.log(`Key received: ${key}`);
-                    let eventSource = new EventSource(`http://localhost:8000/api/event/${key}`);
-
-                    eventSource.onmessage = (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            const index = this.taskData.findIndex(t => t.id === data.id);
-                            if (index !== -1) {
-                                this.taskData[index].progress = data.progress;
-                                this.taskData[index].speed = data.speed;
-                                this.taskData[index].status = data.status;
-                                this.taskData[index].remainingTime = data.remainingTime;
-                            }
-                        } catch (error) {
-                            console.error(`Error parsing SSE message:`, error);
-                        }
-                    };
-
-                    eventSource.onopen = () => {
-                        console.log('SSE connection established.');
-                    };
-
-                    eventSource.onerror = (error) => {
-                        console.error('SSE connection error:', error);
-                        eventSource.close();
-                    };
-
+                    this.connectSSE(key)
                     await this.fetchData();
                 } catch (error) {
                     console.error('Error in submitData:', error);
@@ -93,11 +95,11 @@
             },
 
             async refresh(ids) {
-                let result = [];
-                for (let i = 0; i < ids.length; i++) {
-                    result.push(ids[i]);
+                console.log(ids)
+                const resp = await RestartDownload(ids)
+                for (const id of ids) {
+                    this.connectSSE(id)
                 }
-                await fetchTaskInfo(result)
                 this.checkValue = []
                 await this.fetchData()
             },
@@ -226,7 +228,7 @@
 
             handleSpeed(speed) {
                 return speed + 'MB/s'
-            }
+            },
         }
         return globalData;
     }

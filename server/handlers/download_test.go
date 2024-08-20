@@ -35,7 +35,7 @@ func TestSubmit(t *testing.T) {
 		db.Create(&settings)
 
 		reqBody := DownloadRequest{
-			URL: "https://q6.itc.cn/images01/20240813/d4b6af09a7d74a05890afa16b9e4dfa8.jpeg",
+			URL: "https://i1.hdslb.com/bfs/archive/8db3fd38ae6eb0625e0c3b1d274160294d7bd5f5.jpg",
 		}
 		req, err := json.Marshal(reqBody)
 		assert.Nil(t, err)
@@ -43,7 +43,8 @@ func TestSubmit(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "key")
 		time.Sleep(2 * time.Second)
-		os.Remove("./d4b6af09a7d74a05890afa16b9e4dfa8.jpeg")
+		err = os.Remove("./8db3fd38ae6eb0625e0c3b1d274160294d7bd5f5.jpg")
+		assert.Nil(t, err)
 	})
 
 	t.Run("bind req error", func(t *testing.T) {
