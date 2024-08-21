@@ -59,63 +59,66 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 
 func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 	startTime := time.Now()
-	carrot.Info("fileSize:", task.Size, "savePath:", task.SavePath, "chunkSize:", task.ChunkSize, "numChunks:", task.ChunkNum)
+	carrot.Info("id:", task.ID, "fileSize:", task.Size, "savePath:", task.SavePath, "chunkSize:", task.ChunkSize, "numChunks:", task.ChunkNum)
 
-	outputFile, err := os.Create(task.SavePath)
+	outputFile, err := os.OpenFile(task.SavePath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		carrot.Error("create tempFile error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+		carrot.Error("open or create file error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
 		return
 	}
 
 	// Init chunk info
-	for i := 0; i < int(task.ChunkNum); i++ {
-		start := int64(i) * task.ChunkSize
-		end := math.Min(float64(start+task.ChunkSize), float64(task.Size)) - 1
-		task.Chunk[i] = models.Chunk{
-			Index: i,
-			Start: int(start),
-			End:   int(end),
-			Done:  false,
+	if task.TotalDownloaded == 0 {
+		for i := 0; i < int(task.ChunkNum); i++ {
+			start := int64(i) * task.ChunkSize
+			end := math.Min(float64(start+task.ChunkSize), float64(task.Size)) - 1
+			task.Chunk[i] = models.Chunk{
+				TaskID: task.ID,
+				Index:  i,
+				Start:  int(start),
+				End:    int(end),
+			}
+			models.AddChunk(h.db, &task.Chunk[i])
 		}
 	}
-
-	req, err := http.NewRequest(http.MethodGet, task.Url, nil)
-	if err != nil {
-		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", task.Url)
-		return
-	}
-	req = req.WithContext(es.ctx)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "*/*")
 
 	task.Status = models.TaskStatusDownloading
 
 	// Create a pool of goroutines
 	pool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
-		err := h.downloadChunk(es, &task.Chunk[i.(int)], outputFile, startTime, task, req)
+		err := h.downloadChunk(es, &task.Chunk[i.(int)], outputFile, startTime, task)
 		if err != nil {
 			// Clean all resources
 			outputFile.Close()
 			h.cleanEventSource(task.ID)
-			es.Emit(DownloadProgress{ID: task.ID, Name: task.Name, Status: models.TaskStatusFailed})
 
-			if errors.Is(err, context.Canceled) || errors.Is(err, os.ErrClosed) {
-				return
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, os.ErrClosed) {
+				carrot.Error("download chunk failed", "key:", es.key, "url:", task.Url, "err:", err)
+				es.Emit(DownloadProgress{ID: task.ID, Name: task.Name, Status: models.TaskStatusFailed})
 			}
-
-			carrot.Error("download chunk failed", "key:", es.key, "url:", task.Url, "err:", err)
-			return
 		}
 	})
 	defer pool.Release()
 
 	for i := 0; i < int(task.ChunkNum); i++ {
-		_ = pool.Invoke(i)
+		// Skip completed chunks
+		if !task.Chunk[i].Done {
+			_ = pool.Invoke(i)
+		}
 	}
 }
 
-func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFile *os.File, startTime time.Time, task *models.Task, req *http.Request) error {
+func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFile *os.File, startTime time.Time, task *models.Task) error {
+	req, err := http.NewRequest(http.MethodGet, task.Url, nil)
+	if err != nil {
+		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", task.Url)
+		return err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", chunk.Start, chunk.End))
+	req = req.WithContext(es.ctx)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
@@ -144,11 +147,12 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 		return err
 	}
 
-	chunk.Done = true
 	task.TotalDownloaded += n
+	chunk.Done = true
+	models.UpdateChunk(h.db, chunk)
 
 	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
-	carrot.Info("speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s")
+	carrot.Info("id:", task.ID, "speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s", "chunkIndex:", chunk.Index)
 
 	es.Emit(DownloadProgress{
 		ID:            task.ID,
@@ -169,7 +173,7 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 			RemainingTime: remainingTime,
 			Status:        task.Status,
 		})
-		
+		models.DeleteChunks(h.db, task.ID)
 		models.UpdateTask(h.db, task)
 		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
 		outputFile.Close()
@@ -240,7 +244,7 @@ func (h *Handlers) handlePause(c *gin.Context) {
 				carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
 				return
 			}
-			
+
 			h.cleanEventSource(task.ID)
 		} else {
 			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloading)
@@ -265,50 +269,29 @@ func (h *Handlers) handleResume(c *gin.Context) {
 		return
 	}
 
-	startTime := time.Now()
-
-	taskPool, _ := ants.NewPoolWithFunc(len(tasks), func(t interface{}) {
-		h.resumeTask(t.(*models.Task), startTime)
-	})
-	defer taskPool.Release()
-
-	go func() {
-		for _, task := range tasks {
-			if task.Status != models.TaskStatusCanceled {
-				carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotCanceled)
-				return
-			}
-			taskPool.Invoke(task)
+	for _, task := range tasks {
+		if task.Status != models.TaskStatusCanceled {
+			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotCanceled)
+			return
 		}
-	}()
+
+		es := h.createEventSourceWithKey(task.ID)
+
+		task.Status = models.TaskStatusPending
+		task.Speed = 0
+		task.Chunk, err = models.GetChunksByTaskId(h.db, task.ID)
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, models.ErrGetChunks)
+			return
+		}
+		models.UpdateTask(h.db, &task)
+
+		go func() {
+			h.processDownload(es, &task)
+		}()
+	}
+
 	c.JSON(http.StatusOK, gin.H{"ids": ids})
-}
-
-func (h *Handlers) resumeTask(task *models.Task, startTime time.Time) {
-	es := h.createEventSourceWithKey(task.ID)
-
-	outputFile, err := os.OpenFile(task.SavePath, os.O_RDWR|os.O_APPEND, 0666)
-	if err != nil {
-		carrot.Error("error opening existing file", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
-		return
-	}
-	defer outputFile.Close()
-
-	// Create a pool of goroutines for chunk downloads
-	chunkPool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
-		// h.downloadChunk(&task.Chunk[i.(int)], outputFile, es, startTime, task, )
-	})
-	defer chunkPool.Release()
-
-	task.Status = models.TaskStatusDownloading
-	_ = models.UpdateTask(h.db, task)
-
-	for i := 0; i < int(task.ChunkNum); i++ {
-		// Only download chunks that are not completed
-		if !task.Chunk[i].Done {
-			_ = chunkPool.Invoke(i)
-		}
-	}
 }
 
 // Re download
@@ -338,7 +321,7 @@ func (h *Handlers) handleRestart(c *gin.Context) {
 		task.Progress = 0
 		task.Speed = 0
 		task.Chunk = make([]models.Chunk, task.ChunkNum)
-		_ = models.UpdateTask(h.db, &task)
+		models.UpdateTask(h.db, &task)
 
 		go func() {
 			h.processDownload(es, &task)

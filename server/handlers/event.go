@@ -51,7 +51,7 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 			return false
 		case data, ok := <-eventSource.eventChan:
 			if data == nil || !ok {
-				c.SSEvent("close", "download complete")
+				c.SSEvent("close", "channel closed")
 				return false
 			}
 			eventSource.lastTime = time.Now()

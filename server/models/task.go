@@ -28,16 +28,19 @@ type Task struct {
 }
 
 type Chunk struct {
-	Index int
-	Start int
-	End   int
-	Done  bool // is finished
+	TaskID string `json:"id" gorm:"index" comment:"任务ID"`
+	Index  int    `json:"index" gorm:"size:200" comment:"分片索引"`
+	Start  int    `json:"start" gorm:"size:200" comment:"分片开始位置"`
+	End    int    `json:"end" gorm:"size:200" comment:"分片结束位置"`
+	Done   bool   `json:"done" gorm:"size:20" comment:"是否下载完成"`
 }
 
+// Insert a task
 func AddTask(db *gorm.DB, task *Task) error {
 	return db.Create(task).Error
 }
 
+// Update a task
 func UpdateTask(db *gorm.DB, task *Task) error {
 	return db.Model(task).Where("id = ?", task.ID).Updates(map[string]interface{}{
 		"status":           task.Status,
@@ -70,4 +73,28 @@ func GetTasksByStatus(db *gorm.DB, status string) []Task {
 // Remove tasks according to ids
 func DeleteTasksByIds(db *gorm.DB, ids []string) error {
 	return db.Where("id IN (?)", ids).Delete(&Task{}).Error
+}
+
+// Insert a chunk
+func AddChunk(db *gorm.DB, chunk *Chunk) error {
+	return db.Create(chunk).Error
+}
+
+// Update a chunk
+func UpdateChunk(db *gorm.DB, chunk *Chunk) error {
+	return db.Model(chunk).Where("task_id = ? AND `index` = ?", chunk.TaskID, chunk.Index).Updates(map[string]interface{}{
+		"done": chunk.Done,
+	}).Error
+}
+
+// Delete all chunks by task id
+func DeleteChunks(db *gorm.DB, taskId string) error {
+	return db.Where("task_id = ?", taskId).Delete(&Chunk{}).Error
+}
+
+// Get all chunks by task id
+func GetChunksByTaskId(db *gorm.DB, taskId string) ([]Chunk, error) {
+	var chunks []Chunk
+	err := db.Where("task_id = ?", taskId).Find(&chunks).Error
+	return chunks, err
 }

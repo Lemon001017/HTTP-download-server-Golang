@@ -87,21 +87,39 @@
                         this.showAlert = false;
                     }, 1000);
                     const key = resp.key;
-                    this.connectSSE(key)
                     await this.fetchData();
+                    this.connectSSE(key)
                 } catch (error) {
-                    console.error('Error in submitData:', error);
+                    console.error('Error in submit:', error);
                 }
             },
 
             async refresh(ids) {
-                console.log(ids)
-                const resp = await RestartDownload(ids)
-                for (const id of ids) {
-                    this.connectSSE(id)
+                try{
+                    console.log(ids)
+                    const resp = await RestartDownload(ids)
+                    await this.fetchData()
+                    for (const id of ids) {
+                        this.connectSSE(id)
+                    }
+                    this.checkValue = []
+                }catch (error) {
+                    console.error('Error in refresh:', error);
                 }
-                this.checkValue = []
-                await this.fetchData()
+            },
+
+            async resumeTaskDownload(ids) {
+                try {
+                    console.log(ids)
+                    const resp = resumeTask(ids)
+                    await this.fetchData()
+                    for (const id of ids) {
+                        this.connectSSE(id)
+                    }
+                    this.checkValue = []
+                } catch (error) {
+                    console.error('Error in resume:', error);
+                }
             },
 
             async pauseTaskDownload(ids) {
@@ -118,18 +136,7 @@
                     await this.fetchData()
                 }
             },
-            async resumeTaskDownload(ids) {
-                if (ids.length !== 0) {
-                    let result = [];
-                    for (let i = 0; i < ids.length; i++) {
-                        result.push(ids[i]);
-                    }
-                    await resumeTask(result)
-                    this.checkValue = []
-                    this.showPause = false
-                    await this.fetchData()
-                }
-            },
+            
             async handleDelete(ids) {
                 if (!ids) {
                     return
@@ -141,6 +148,7 @@
                 this.showModal = true
                 this.ids = result
             },
+
             async removeTask(ids) {
                 if (ids.length !== 0) {
                     let result = [];

@@ -48,7 +48,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			},
 			Response: &apidocs.DocField{
 				Fields: []apidocs.DocField{
-					{Name: "ok", Type: apidocs.TYPE_STRING},
+					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表,用于连接sse"},
 				},
 			},
 		},
@@ -62,6 +62,11 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表"},
 				},
 			},
+			Response: &apidocs.DocField{
+				Fields: []apidocs.DocField{
+					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表,用于连接sse"},
+				},
+			},
 		},
 		{
 			Group:  "httpDownloadServer",
@@ -71,6 +76,11 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			Request: &apidocs.DocField{
 				Fields: []apidocs.DocField{
 					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表"},
+				},
+			},
+			Response: &apidocs.DocField{
+				Fields: []apidocs.DocField{
+					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表,用于连接sse"},
 				},
 			},
 		},
@@ -86,7 +96,7 @@ func (h *Handlers) GetDocs() []apidocs.UriDoc {
 			},
 			Response: &apidocs.DocField{
 				Fields: []apidocs.DocField{
-					{Name: "ok", Type: apidocs.TYPE_STRING},
+					{Name: "ids", Type: apidocs.TYPE_STRING, Desc: "任务id列表,用于连接sse"},
 				},
 			},
 		},
