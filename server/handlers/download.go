@@ -104,6 +104,7 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 				carrot.Error("download chunk failed", "key:", es.key, "url:", task.Url, "err:", err)
 				es.Emit(DownloadProgress{ID: task.ID, Name: task.Name, Status: models.TaskStatusFailed})
 			}
+			return
 		}
 	})
 	defer pool.Release()
@@ -268,10 +269,9 @@ func (h *Handlers) handlePause(c *gin.Context) {
 
 	for _, task := range tasks {
 		if task.Status == models.TaskStatusDownloading {
+			h.cleanEventSource(task.ID)
 			task.Status = models.TaskStatusCanceled
 			models.UpdateTask(h.db, &task)
-
-			h.cleanEventSource(task.ID)
 		} else {
 			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloading)
 			return
