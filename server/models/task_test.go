@@ -152,3 +152,64 @@ func TestDeleteTasksByIds(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, len(GetTasksByStatus(db, "all")), 0)
 }
+
+func TestInsertChunk(t *testing.T) {
+	db := createTestDB()
+	chunk := &Chunk{
+		TaskID: "123",
+		Index:  1,
+		Start:  0,
+		End:    1024,
+		Done:   false,
+	}
+	err := AddChunk(db, chunk)
+	assert.Nil(t, err)
+}
+
+func TestUpdateChunk(t *testing.T) {
+	db := createTestDB()
+	chunk := &Chunk{
+		TaskID: "123",
+		Index:  1,
+		Start:  0,
+		End:    1024,
+		Done:   false,
+	}
+	db.Create(chunk)
+	chunk.Done = true
+	err := UpdateChunk(db, chunk)
+	assert.Nil(t, err)
+}
+
+func TestGetChunksByTaskId(t *testing.T) {
+	db := createTestDB()
+	db.Create(&Chunk{
+		TaskID: "123",
+		Index:  1,
+		Start:  0,
+		End:    1024,
+		Done:   false,
+	})
+	db.Create(&Chunk{
+		TaskID: "123",
+		Index:  2,
+		Start:  1024,
+		End:    2048,
+		Done:   true,
+	})
+	chunks := GetChunksByTaskId(db, "123")
+	assert.Equal(t, len(chunks), 2)
+}
+
+func TestDeleteChunks(t *testing.T) {
+	db := createTestDB()
+	db.Create(&Chunk{
+		TaskID: "123",
+		Index:  1,
+		Start:  0,
+		End:    1024,
+		Done:   false,
+	})
+	err := DeleteChunks(db, "123")
+	assert.Nil(t, err)
+}

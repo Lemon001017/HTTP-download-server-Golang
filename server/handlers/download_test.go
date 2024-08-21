@@ -227,3 +227,68 @@ func TestPause(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
+
+func TestResume(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	t.Run("resume success", func(t *testing.T) {
+		settings := models.Settings{
+			UserID:       1,
+			DownloadPath: "./",
+		}
+		db.Create(&settings)
+
+		task := models.Task{
+			ID:              "1",
+			Url:             "https://i1.hdslb.com/bfs/archive/8db3fd38ae6eb0625e0c3b1d274160294d7bd5f5.jpg",
+			Status:          models.TaskStatusCanceled,
+			TotalDownloaded: 12345,
+		}
+		db.Create(&task)
+
+		req := []byte(`["1"]`)
+		w := c.Post("POST", "/api/task/resume", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("bing ids error", func(t *testing.T) {
+		settings := models.Settings{
+			UserID:       1,
+			DownloadPath: "./",
+		}
+		db.Create(&settings)
+
+		task := models.Task{
+			ID:              "1",
+			Url:             "https://i1.hdslb.com/bfs/archive/8db3fd38ae6eb0625e0c3b1d274160294d7bd5f5.jpg",
+			Status:          models.TaskStatusDownloaded,
+			TotalDownloaded: 12345,
+		}
+		db.Create(&task)
+
+		req := []byte("invalid")
+		w := c.Post("POST", "/api/task/resume", req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("task status error", func(t *testing.T) {
+		settings := models.Settings{
+			UserID:       1,
+			DownloadPath: "./",
+		}
+		db.Create(&settings)
+
+		task := models.Task{
+			ID:              "1",
+			Url:             "https://i1.hdslb.com/bfs/archive/8db3fd38ae6eb0625e0c3b1d274160294d7bd5f5.jpg",
+			Status:          models.TaskStatusDownloading,
+			TotalDownloaded: 12345,
+		}
+		db.Create(&task)
+
+		req := []byte(`["1"]`)
+		w := c.Post("POST", "/api/task/resume", req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}

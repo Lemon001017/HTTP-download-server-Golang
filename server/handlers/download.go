@@ -279,18 +279,13 @@ func (h *Handlers) handleResume(c *gin.Context) {
 
 		task.Status = models.TaskStatusPending
 		task.Speed = 0
-		task.Chunk, err = models.GetChunksByTaskId(h.db, task.ID)
-		if err != nil {
-			carrot.AbortWithJSONError(c, http.StatusInternalServerError, models.ErrGetChunks)
-			return
-		}
+		task.Chunk = models.GetChunksByTaskId(h.db, task.ID)
 		models.UpdateTask(h.db, &task)
 
 		go func() {
 			h.processDownload(es, &task)
 		}()
 	}
-
 	c.JSON(http.StatusOK, gin.H{"ids": ids})
 }
 

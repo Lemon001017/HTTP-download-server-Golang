@@ -93,8 +93,8 @@ func DeleteChunks(db *gorm.DB, taskId string) error {
 }
 
 // Get all chunks by task id
-func GetChunksByTaskId(db *gorm.DB, taskId string) ([]Chunk, error) {
+func GetChunksByTaskId(db *gorm.DB, taskId string) []Chunk {
 	var chunks []Chunk
-	err := db.Where("task_id = ?", taskId).Find(&chunks).Error
-	return chunks, err
+	db.Where("task_id = ?", taskId).Find(&chunks)
+	return chunks
 }
