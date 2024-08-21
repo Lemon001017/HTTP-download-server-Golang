@@ -55,7 +55,6 @@
                 };
 
                 eventSource.onerror = (error) => {
-                    console.error('SSE connection error:', error);
                     eventSource.close();
                 };
             },
@@ -63,7 +62,6 @@
             async initData() {
                 this.currentPageColor = document.body.getAttribute('data-page-type')
                 this.fetchData()
-                // this.connectSSE()
             },
 
             async fetchData() {
@@ -71,7 +69,11 @@
                     status: this.optionValue,
                 }
                 const resp = await fetchTasks(data)
-                console.log(resp)
+                const ids = resp.items.map(item => item.id);
+                console.log(ids)
+                for (const id of ids) {
+                    this.connectSSE(id)
+                }
                 this.tasks = resp
                 this.taskData = resp?.items
             },
@@ -88,7 +90,6 @@
                     }, 1000);
                     const key = resp.key;
                     await this.fetchData();
-                    this.connectSSE(key)
                 } catch (error) {
                     console.error('Error in submit:', error);
                 }
@@ -99,9 +100,6 @@
                     console.log(ids)
                     const resp = await RestartDownload(ids)
                     await this.fetchData()
-                    for (const id of ids) {
-                        this.connectSSE(id)
-                    }
                     this.checkValue = []
                 }catch (error) {
                     console.error('Error in refresh:', error);
@@ -113,9 +111,6 @@
                     console.log(ids)
                     const resp = resumeTask(ids)
                     await this.fetchData()
-                    for (const id of ids) {
-                        this.connectSSE(id)
-                    }
                     this.checkValue = []
                 } catch (error) {
                     console.error('Error in resume:', error);

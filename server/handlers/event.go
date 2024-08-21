@@ -41,7 +41,7 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, "missing key")
 		return
 	}
-
+	
 	eventSource := v.(*EventSource)
 
 	c.Stream(func(w io.Writer) bool {
@@ -62,9 +62,8 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 	})
 }
 
-func (h *Handlers) createEventSource() *EventSource {
+func (h *Handlers) createEventSourceInternal(key string) *EventSource {
 	ctx, cancel := context.WithCancel(context.Background())
-	key := carrot.RandText(8)
 
 	eventSource := &EventSource{
 		lastTime:  time.Now(),
@@ -90,36 +89,17 @@ func (h *Handlers) createEventSource() *EventSource {
 			}
 		}
 	}()
+
 	return eventSource
 }
 
-func (h *Handlers) createEventSourceWithKey(key string) *EventSource {
-	ctx, cancel := context.WithCancel(context.Background())
+func (h *Handlers) createEventSource() *EventSource {
+	key := carrot.RandText(8)
+	return h.createEventSourceInternal(key)
+}
 
-	eventSource := &EventSource{
-		lastTime:  time.Now(),
-		cancel:    cancel,
-		ctx:       ctx,
-		eventChan: make(chan any, 10),
-		key:       key,
-	}
-	h.eventSources.Store(key, eventSource)
-	go func() {
-		defer h.cleanEventSource(key)
-		for {
-			select {
-			case <-ctx.Done():
-				carrot.Info("user cancel download")
-				return
-			case <-time.After(1 * time.Minute):
-				if time.Since(eventSource.lastTime) > 30*time.Minute {
-					carrot.Info("sse timeout")
-					return
-				}
-			}
-		}
-	}()
-	return eventSource
+func (h *Handlers) createEventSourceWithKey(key string) *EventSource {
+	return h.createEventSourceInternal(key)
 }
 
 func (h *Handlers) cleanEventSource(key string) {

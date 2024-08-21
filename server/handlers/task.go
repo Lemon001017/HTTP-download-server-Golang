@@ -46,5 +46,9 @@ func (h *Handlers) handleDelete(c *gin.Context) {
 		return
 	}
 
+	for _, id := range ids {
+		models.DeleteChunks(h.db, id)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"ids": ids})
 }

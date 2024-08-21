@@ -7,6 +7,7 @@ require (
 	github.com/panjf2000/ants v1.3.0
 	github.com/restsend/carrot v0.0.0-20240809103104-5f7d169d5148
 	github.com/stretchr/testify v1.9.0
+	golang.org/x/time v0.6.0
 	gorm.io/gorm v1.25.11
 )
 

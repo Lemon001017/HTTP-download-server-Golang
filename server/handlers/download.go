@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/panjf2000/ants"
 	"github.com/restsend/carrot"
+	"golang.org/x/time/rate"
 )
 
 type DownloadRequest struct {
@@ -67,6 +68,12 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 		return
 	}
 
+	settings, err := models.GetSettings(h.db, 1)
+	if err != nil {
+		carrot.Error("get settings error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
+		return
+	}
+
 	// Init chunk info
 	if task.TotalDownloaded == 0 {
 		for i := 0; i < int(task.ChunkNum); i++ {
@@ -83,10 +90,11 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 	}
 
 	task.Status = models.TaskStatusDownloading
+	models.UpdateTask(h.db, task)
 
 	// Create a pool of goroutines
 	pool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
-		err := h.downloadChunk(es, &task.Chunk[i.(int)], outputFile, startTime, task)
+		err := h.downloadChunk(es, &task.Chunk[i.(int)], task, outputFile, startTime, settings)
 		if err != nil {
 			// Clean all resources
 			outputFile.Close()
@@ -108,7 +116,8 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 	}
 }
 
-func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFile *os.File, startTime time.Time, task *models.Task) error {
+func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *models.Task,
+	outputFile *os.File, startTime time.Time, settings *models.Settings) error {
 	req, err := http.NewRequest(http.MethodGet, task.Url, nil)
 	if err != nil {
 		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", task.Url)
@@ -140,31 +149,36 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 		h.mu.Unlock()
 		return err
 	}
+	// Create a rate limiter
+	maxDownloadSpeedInBytes := settings.MaxDownloadSpeed * 1000000 / 8
+	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes))
 
-	n, err := io.CopyBuffer(outputFile, resp.Body, buf)
-	if err != nil {
-		h.mu.Unlock()
-		return err
-	}
+	for {
+		n, err := resp.Body.Read(buf)
+		if err != nil && err != io.EOF {
+			h.mu.Unlock()
+			return err
+		}
 
-	task.TotalDownloaded += n
-	chunk.Done = true
-	models.UpdateChunk(h.db, chunk)
+		if n == 0 {
+			break
+		}
 
-	speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
-	carrot.Info("id:", task.ID, "speed", speed, "MB/s", "progress", progress, "remainingTime", remainingTime, "s", "chunkIndex:", chunk.Index)
+		err = limiter.WaitN(context.Background(), n)
+		if err != nil {
+			h.mu.Unlock()
+			return err
+		}
 
-	es.Emit(DownloadProgress{
-		ID:            task.ID,
-		Name:          task.Name,
-		Progress:      progress,
-		Speed:         speed,
-		RemainingTime: remainingTime,
-		Status:        task.Status,
-	})
+		_, err = outputFile.Write(buf[:n])
+		if err != nil {
+			h.mu.Unlock()
+			return err
+		}
 
-	if task.TotalDownloaded == task.Size {
-		task.Status = models.TaskStatusDownloaded
+		task.TotalDownloaded += int64(n)
+
+		speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
 		es.Emit(DownloadProgress{
 			ID:            task.ID,
 			Name:          task.Name,
@@ -173,12 +187,28 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, outputFil
 			RemainingTime: remainingTime,
 			Status:        task.Status,
 		})
-		models.DeleteChunks(h.db, task.ID)
+	}
+
+	chunk.Done = true
+	models.UpdateChunk(h.db, chunk)
+	// download complete
+	if task.TotalDownloaded == task.Size {
+		task.Status = models.TaskStatusDownloaded
 		models.UpdateTask(h.db, task)
+
+		es.Emit(DownloadProgress{
+			ID:     task.ID,
+			Name:   task.Name,
+			Status: task.Status,
+		})
+
 		carrot.Info("Download complete", "key:", es.key, "id:", task.ID, "url:", task.Url)
+
+		models.DeleteChunks(h.db, task.ID)
 		outputFile.Close()
 		close(es.eventChan)
 	}
+
 	models.UpdateTask(h.db, task)
 
 	h.mu.Unlock()
@@ -239,11 +269,7 @@ func (h *Handlers) handlePause(c *gin.Context) {
 	for _, task := range tasks {
 		if task.Status == models.TaskStatusDownloading {
 			task.Status = models.TaskStatusCanceled
-			err = models.UpdateTask(h.db, &task)
-			if err != nil {
-				carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
-				return
-			}
+			models.UpdateTask(h.db, &task)
 
 			h.cleanEventSource(task.ID)
 		} else {

@@ -29,3 +29,15 @@
 2. 根据 id 获取所有任务
 3. 枚举所有任务，根据 key 创建对应的 eventSource，更新任务状态，异步调用 processDownload 方法执行下载
 4. 等待下载结束
+
+### 限速下载实现步骤
+
+1. 安装 `golang.org/x/time/rate` 库
+2. 创建一个限速器，设置每秒允许的请求数和桶的大小(这里限速单位是 MB/s，需要先将 MB/s 转换为 Bytes/s)
+
+```go
+maxDownloadSpeedInBytes := settings.MaxDownloadSpeed * 1000000 / 8
+limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes))
+```
+
+3. 集成到 `downloadChunk`方法中
