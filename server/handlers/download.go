@@ -270,6 +270,7 @@ func (h *Handlers) handlePause(c *gin.Context) {
 	for _, task := range tasks {
 		if task.Status == models.TaskStatusDownloading {
 			h.cleanEventSource(task.ID)
+			time.Sleep(1 * time.Second)
 			task.Status = models.TaskStatusCanceled
 			models.UpdateTask(h.db, &task)
 		} else {
