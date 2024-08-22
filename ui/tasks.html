@@ -70,10 +70,20 @@
                 }
                 const resp = await fetchTasks(data)
                 const ids = resp.items.map(item => item.id);
-                console.log(ids)
-                for (const id of ids) {
-                    this.connectSSE(id)
+                for (const item of resp.items){
+                    this.connectSSE(item.id)
                 }
+                this.tasks = resp
+                this.taskData = resp?.items
+            },
+
+            async fetchDataWithoutSSE() {
+                let data = {
+                    status: this.optionValue,
+                }
+                const resp = await fetchTasks(data)
+                const ids = resp.items.map(item => item.id);
+                console.log(ids)
                 this.tasks = resp
                 this.taskData = resp?.items
             },
@@ -128,7 +138,7 @@
                     await pauseTask(result)
                     this.checkValue = []
                     this.showPause = true
-                    await this.fetchData()
+                    await this.fetchDataWithoutSSE()
                 }
             },
             

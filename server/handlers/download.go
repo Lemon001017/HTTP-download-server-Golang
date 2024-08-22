@@ -53,12 +53,12 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 
 	// Open a goroutine to handle the download separately
 	go func() {
-		h.processDownload(eventSource, task)
+		h.processDownload(eventSource, task, 0)
 	}()
 	c.JSON(http.StatusOK, EventSourceResult{Key: eventSource.key})
 }
 
-func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
+func (h *Handlers) processDownload(es *EventSource, task *models.Task, lastTotalDownloaded int64) {
 	startTime := time.Now()
 	carrot.Info("id:", task.ID, "fileSize:", task.Size, "savePath:", task.SavePath, "chunkSize:", task.ChunkSize, "numChunks:", task.ChunkNum)
 
@@ -68,7 +68,7 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 		return
 	}
 
-	settings, err := models.GetSettings(h.db, 1)
+	_, maxDownloadSpeed, _, err := h.getSettingsInfo()
 	if err != nil {
 		carrot.Error("get settings error", "key:", es.key, "id:", task.ID, "url:", task.Url, "err:", err)
 		return
@@ -94,7 +94,7 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 
 	// Create a pool of goroutines
 	pool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
-		err := h.downloadChunk(es, &task.Chunk[i.(int)], task, outputFile, startTime, settings)
+		err := h.downloadChunk(es, &task.Chunk[i.(int)], task, outputFile, startTime, maxDownloadSpeed, lastTotalDownloaded)
 		if err != nil {
 			// Clean all resources
 			outputFile.Close()
@@ -118,7 +118,7 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task) {
 }
 
 func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *models.Task,
-	outputFile *os.File, startTime time.Time, settings *models.Settings) error {
+	outputFile *os.File, startTime time.Time, maxDownloadSpeed float64, lastTotalDownloaded int64) error {
 	req, err := http.NewRequest(http.MethodGet, task.Url, nil)
 	if err != nil {
 		carrot.Error("Failed to create HTTP request", "key:", es.key, "url:", task.Url)
@@ -150,8 +150,9 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 		h.mu.Unlock()
 		return err
 	}
+
 	// Create a rate limiter
-	maxDownloadSpeedInBytes := settings.MaxDownloadSpeed * 1000000 / 8
+	maxDownloadSpeedInBytes := maxDownloadSpeed * 1000 * 1000
 	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes))
 
 	for {
@@ -165,7 +166,7 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 			break
 		}
 
-		err = limiter.WaitN(context.Background(), n)
+		err = limiter.WaitN(es.ctx, n)
 		if err != nil {
 			h.mu.Unlock()
 			return err
@@ -179,7 +180,7 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 
 		task.TotalDownloaded += int64(n)
 
-		speed, progress, remainingTime := h.calculateDownloadData(task, startTime)
+		speed, progress, remainingTime := h.calculateDownloadData(task, startTime, lastTotalDownloaded)
 		es.Emit(DownloadProgress{
 			ID:            task.ID,
 			Name:          task.Name,
@@ -309,8 +310,10 @@ func (h *Handlers) handleResume(c *gin.Context) {
 		task.Chunk = models.GetChunksByTaskId(h.db, task.ID)
 		models.UpdateTask(h.db, &task)
 
+		lastTotalDownloaded := task.TotalDownloaded
+
 		go func() {
-			h.processDownload(es, &task)
+			h.processDownload(es, &task, lastTotalDownloaded)
 		}()
 	}
 	c.JSON(http.StatusOK, gin.H{"ids": ids})
@@ -346,7 +349,7 @@ func (h *Handlers) handleRestart(c *gin.Context) {
 		models.UpdateTask(h.db, &task)
 
 		go func() {
-			h.processDownload(es, &task)
+			h.processDownload(es, &task, 0)
 		}()
 	}
 	c.JSON(http.StatusOK, gin.H{"ids": ids})
@@ -440,9 +443,9 @@ func (h *Handlers) getFileInfo(url string, outputDir string) (int64, string, str
 	return fileSize, outputPath, fileName, nil
 }
 
-func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time) (float64, float64, float64) {
+func (h *Handlers) calculateDownloadData(task *models.Task, startTime time.Time, lastTotalDownloaded int64) (float64, float64, float64) {
 	elapsedTime := time.Since(startTime).Seconds()
-	speed := math.Round((float64(task.TotalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
+	speed := math.Round((float64(task.TotalDownloaded-lastTotalDownloaded)/elapsedTime/1024/1024)*10) / 10 // MB/s
 	progress := math.Round((float64(task.TotalDownloaded)/float64(task.Size)*100)*10) / 10
 	remainingTime := math.Round((float64((task.Size-task.TotalDownloaded)/1024/1024)/speed)*10) / 10
 
