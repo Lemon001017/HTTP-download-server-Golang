@@ -41,7 +41,7 @@ func (h *Handlers) handleSSE(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, "missing key")
 		return
 	}
-	
+
 	eventSource := v.(*EventSource)
 
 	c.Stream(func(w io.Writer) bool {
@@ -79,11 +79,11 @@ func (h *Handlers) createEventSourceInternal(key string) *EventSource {
 		for {
 			select {
 			case <-ctx.Done():
-				carrot.Info("user cancel download")
+				carrot.Info("user cancel download", "key:", key)
 				return
 			case <-time.After(1 * time.Minute):
 				if time.Since(eventSource.lastTime) > 30*time.Minute {
-					carrot.Info("sse timeout")
+					carrot.Info("sse timeout", "key:", key)
 					return
 				}
 			}

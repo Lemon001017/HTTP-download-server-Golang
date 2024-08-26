@@ -237,19 +237,17 @@ func (h *Handlers) initOneTask(url, key string) (*models.Task, error) {
 		Size:            fileSize,
 		SavePath:        outputPath,
 		FileType:        filepath.Ext(fileName),
-		Threads:         4,
+		Threads:         models.DefaultThreads,
 		Status:          models.TaskStatusPending,
 		ChunkNum:        numChunks,
 		ChunkSize:       chunkSize,
 		Chunk:           make([]models.Chunk, numChunks),
-		TotalDownloaded: 0,
 	}
 
 	err = models.AddTask(h.db, &task)
 	if err != nil {
 		return nil, err
 	}
-
 	return &task, nil
 }
 

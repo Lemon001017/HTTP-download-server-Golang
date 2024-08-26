@@ -29,6 +29,8 @@ const (
 	TaskFilterDownloaded = "downloaded"
 )
 
+const DefaultThreads = 4
+
 var ErrInputParam = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入参数有误"}
 var ErrSaveFailed = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "保存失败"}
 var ErrGetSettings = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "获取设置失败"}

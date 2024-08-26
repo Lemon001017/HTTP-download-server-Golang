@@ -27,7 +27,7 @@
 
 1. 获取所有 id
 2. 根据 id 获取所有任务
-3. 枚举所有任务，根据 key 创建对应的 eventSource，更新任务状态，异步调用 processDownload 方法执行下载
+3. 枚举所有任务，重置下载进度，根据 key 创建对应的 eventSource，更新任务状态，异步调用 processDownload 方法执行下载
 4. 等待下载结束
 
 ### 限速下载实现步骤
