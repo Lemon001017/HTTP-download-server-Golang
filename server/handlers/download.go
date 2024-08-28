@@ -231,17 +231,17 @@ func (h *Handlers) initOneTask(url, key string) (*models.Task, error) {
 	chunkSize, numChunks := h.getChunkInfo(fileSize)
 
 	task := models.Task{
-		ID:              key,
-		Name:            fileName,
-		Url:             url,
-		Size:            fileSize,
-		SavePath:        outputPath,
-		FileType:        filepath.Ext(fileName),
-		Threads:         models.DefaultThreads,
-		Status:          models.TaskStatusPending,
-		ChunkNum:        numChunks,
-		ChunkSize:       chunkSize,
-		Chunk:           make([]models.Chunk, numChunks),
+		ID:        key,
+		Name:      fileName,
+		Url:       url,
+		Size:      fileSize,
+		SavePath:  outputPath,
+		FileType:  filepath.Ext(fileName),
+		Threads:   models.DefaultThreads,
+		Status:    models.TaskStatusPending,
+		ChunkNum:  numChunks,
+		ChunkSize: chunkSize,
+		Chunk:     make([]models.Chunk, numChunks),
 	}
 
 	err = models.AddTask(h.db, &task)
@@ -269,7 +269,6 @@ func (h *Handlers) handlePause(c *gin.Context) {
 	for _, task := range tasks {
 		if task.Status == models.TaskStatusDownloading {
 			h.cleanEventSource(task.ID)
-			time.Sleep(1 * time.Second)
 			task.Status = models.TaskStatusCanceled
 			models.UpdateTask(h.db, &task)
 		} else {
