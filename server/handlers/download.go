@@ -102,6 +102,8 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task, lastTotal
 
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, os.ErrClosed) {
 				carrot.Error("download chunk failed", "key:", es.key, "url:", task.Url, "err:", err)
+				task.Status = models.TaskStatusFailed
+				models.UpdateTask(h.db, task)
 				es.Emit(DownloadProgress{ID: task.ID, Name: task.Name, Status: models.TaskStatusFailed})
 			}
 			return
