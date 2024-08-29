@@ -444,6 +444,12 @@
                                                 <span>Downloaded</span>
                                             </div>
                                         </template>
+
+                                        <template x-if="task.status ==='failed'">
+                                            <div class="flex items-center space-x-2">
+                                                <span>Failed</span>
+                                            </div>
+                                        </template>
                                     </div>
 
                                     <div class=" space-x-1 flex">

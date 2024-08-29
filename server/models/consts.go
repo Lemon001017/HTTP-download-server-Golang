@@ -42,6 +42,7 @@ var ErrIncompleteFile = httpDownloadServer.Error{Code: http.StatusInternalServer
 var ErrStatusNotDownloading = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "任务未下载"}
 var ErrStatusNotDownloaded = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "任务未下载完成"}
 var ErrStatusNotCanceled = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "任务未暂停"}
+var ErrExpectedFileSize = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "文件大小不符合预期"}
 
 func Migration(db *gorm.DB) error {
 	return db.AutoMigrate(

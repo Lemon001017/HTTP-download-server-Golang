@@ -96,16 +96,16 @@ func (h *Handlers) processDownload(es *EventSource, task *models.Task, lastTotal
 	pool, _ := ants.NewPoolWithFunc(int(task.Threads), func(i interface{}) {
 		err := h.downloadChunk(es, &task.Chunk[i.(int)], task, outputFile, startTime, maxDownloadSpeed, lastTotalDownloaded)
 		if err != nil {
-			// Clean all resources
-			outputFile.Close()
-			h.cleanEventSource(task.ID)
-
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, os.ErrClosed) {
 				carrot.Error("download chunk failed", "key:", es.key, "url:", task.Url, "err:", err)
 				task.Status = models.TaskStatusFailed
 				models.UpdateTask(h.db, task)
 				es.Emit(DownloadProgress{ID: task.ID, Name: task.Name, Status: models.TaskStatusFailed})
 			}
+
+			// Clean all resources
+			outputFile.Close()
+			h.cleanEventSource(task.ID)
 			return
 		}
 	})
@@ -155,7 +155,7 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 
 	// Create a rate limiter
 	maxDownloadSpeedInBytes := maxDownloadSpeed * 1000 * 1000
-	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes))
+	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes*0.1))
 
 	lastMessageTime := time.Now()
 
@@ -217,6 +217,8 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 		models.DeleteChunks(h.db, task.ID)
 		outputFile.Close()
 		close(es.eventChan)
+	} else if task.TotalDownloaded > task.Size {
+		return models.ErrExpectedFileSize
 	}
 
 	models.UpdateTask(h.db, task)
@@ -340,22 +342,23 @@ func (h *Handlers) handleRestart(c *gin.Context) {
 	}
 
 	for _, task := range tasks {
-		if task.Status != models.TaskStatusDownloaded {
+		if task.Status == models.TaskStatusDownloaded || task.Status == models.TaskStatusFailed {
+			es := h.createEventSourceWithKey(task.ID)
+
+			task.Status = models.TaskStatusPending
+			task.TotalDownloaded = 0
+			task.Progress = 0
+			task.Speed = 0
+			task.Chunk = make([]models.Chunk, task.ChunkNum)
+			models.UpdateTask(h.db, &task)
+
+			go func() {
+				h.processDownload(es, &task, 0)
+			}()
+		} else {
 			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloaded)
 			return
 		}
-		es := h.createEventSourceWithKey(task.ID)
-
-		task.Status = models.TaskStatusPending
-		task.TotalDownloaded = 0
-		task.Progress = 0
-		task.Speed = 0
-		task.Chunk = make([]models.Chunk, task.ChunkNum)
-		models.UpdateTask(h.db, &task)
-
-		go func() {
-			h.processDownload(es, &task, 0)
-		}()
 	}
 	c.JSON(http.StatusOK, gin.H{"ids": ids})
 }

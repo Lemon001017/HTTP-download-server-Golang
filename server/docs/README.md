@@ -37,7 +37,7 @@
 
 ```go
 	maxDownloadSpeedInBytes := maxDownloadSpeed * 1000 * 1000
-	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes))
+	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes*0.1))
 ```
 
 3. 集成到 `downloadChunk`方法中
