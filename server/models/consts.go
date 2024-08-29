@@ -3,6 +3,7 @@ package models
 import (
 	httpDownloadServer "HTTP-download-server/server"
 	"net/http"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -30,6 +31,7 @@ const (
 )
 
 const DefaultThreads = 4
+const MessageInterval = 200 * time.Millisecond
 
 var ErrInputParam = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "输入参数有误"}
 var ErrSaveFailed = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "保存失败"}

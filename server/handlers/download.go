@@ -157,6 +157,8 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 	maxDownloadSpeedInBytes := maxDownloadSpeed * 1000 * 1000
 	limiter := rate.NewLimiter(rate.Limit(maxDownloadSpeedInBytes), int(maxDownloadSpeedInBytes))
 
+	lastMessageTime := time.Now()
+
 	for {
 		n, err := resp.Body.Read(buf)
 		if err != nil && err != io.EOF {
@@ -182,15 +184,19 @@ func (h *Handlers) downloadChunk(es *EventSource, chunk *models.Chunk, task *mod
 
 		task.TotalDownloaded += int64(n)
 
-		speed, progress, remainingTime := h.calculateDownloadData(task, startTime, lastTotalDownloaded)
-		es.Emit(DownloadProgress{
-			ID:            task.ID,
-			Name:          task.Name,
-			Progress:      progress,
-			Speed:         speed,
-			RemainingTime: remainingTime,
-			Status:        task.Status,
-		})
+		if time.Since(lastMessageTime) >= models.MessageInterval {
+			speed, progress, remainingTime := h.calculateDownloadData(task, startTime, lastTotalDownloaded)
+			es.Emit(DownloadProgress{
+				ID:            task.ID,
+				Name:          task.Name,
+				Progress:      progress,
+				Speed:         speed,
+				RemainingTime: remainingTime,
+				Status:        task.Status,
+			})
+			models.UpdateTask(h.db, task)
+			lastMessageTime = time.Now()
+		}
 	}
 
 	chunk.Done = true
