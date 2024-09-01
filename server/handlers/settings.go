@@ -29,7 +29,7 @@ func (h *Handlers) handleSaveSettings(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "保存成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "Save successfully"})
 }
 
 func (h *Handlers) handleGetSettings(c *gin.Context) {

@@ -32,14 +32,14 @@ func TestSaveSettings(t *testing.T) {
 		assert.Nil(t, err)
 		w := c.Post("POST", "/api/settings/1", req)
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Body.String(), "保存成功")
+		assert.Contains(t, w.Body.String(), "Save successfully")
 	})
 
 	t.Run("input err", func(t *testing.T) {
 		req := []byte(`{"invalid_json":}`)
 		w := c.Post("POST", "/api/settings/1", req)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.Contains(t, w.Body.String(), "输入参数有误")
+		assert.Contains(t, w.Body.String(), "Input is invalid")
 	})
 
 	t.Run("parse err", func(t *testing.T) {
