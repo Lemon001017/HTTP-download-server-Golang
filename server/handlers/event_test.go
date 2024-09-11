@@ -66,7 +66,6 @@ func TestHandleSSE(t *testing.T) {
 
 		h.handleSSE(c)
 		assert.Equal(t, http.StatusOK, w.Code)
-		// 检查header
 		assert.Equal(t, "no", w.Header().Get("X-Accel-Buffering"))
 	}
 

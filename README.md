@@ -1,4 +1,10 @@
-# HTTP-download-server
+# HTTP-download-server (Go version)
+
+## Technology Used
+
+Web: `Alpinejs` + `Tailwindcss` + `heroicons`
+
+Server: `Go` + `Gin` + `Gorm` + `carrot` + `SQLite`
 
 ## Run locally
 
