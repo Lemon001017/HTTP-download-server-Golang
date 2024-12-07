@@ -32,6 +32,7 @@ const (
 
 const DefaultThreads = 4
 const MessageInterval = 200 * time.Millisecond
+const DefaultDownloadBytes = 0
 
 var ErrInputParam = httpDownloadServer.Error{Code: http.StatusBadRequest, Message: "Input is invalid"}
 var ErrSaveFailed = httpDownloadServer.Error{Code: http.StatusInternalServerError, Message: "Save settigns failed"}

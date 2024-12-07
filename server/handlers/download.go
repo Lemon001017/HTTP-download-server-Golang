@@ -53,7 +53,7 @@ func (h *Handlers) handleSubmit(c *gin.Context) {
 
 	// Open a goroutine to handle the download separately
 	go func() {
-		h.processDownload(eventSource, task, 0)
+		h.processDownload(eventSource, task, models.DefaultDownloadBytes)
 	}()
 	c.JSON(http.StatusOK, EventSourceResult{Key: eventSource.key})
 }
@@ -353,7 +353,7 @@ func (h *Handlers) handleRestart(c *gin.Context) {
 			models.UpdateTask(h.db, &task)
 
 			go func() {
-				h.processDownload(es, &task, 0)
+				h.processDownload(es, &task, models.DefaultDownloadBytes)
 			}()
 		} else {
 			carrot.AbortWithJSONError(c, http.StatusBadRequest, models.ErrStatusNotDownloaded)
