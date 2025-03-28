@@ -3,8 +3,10 @@ package handlers
 import (
 	"HTTP-download-server/server/models"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -143,4 +145,167 @@ func createTestFiles(t *testing.T, baseDir string) {
 			t.Fatalf("Failed to create test file %s: %v", path, err)
 		}
 	}
+}
+
+// TestFilePreview tests the image preview functionality
+func TestFilePreview(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	// Create a temporary directory for test files
+	tempDir, err := ioutil.TempDir("", "file-preview-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test files
+	imageContent := "Fake image data for testing"
+	imagePath := filepath.Join(tempDir, "test-image.jpg")
+	err = ioutil.WriteFile(imagePath, []byte(imageContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test image: %v", err)
+	}
+
+	// Create settings with the temp directory as download path
+	settings := &models.Settings{
+		UserID:           1,
+		DownloadPath:     tempDir,
+		MaxDownloadSpeed: 1.0,
+		MaxTasks:         10,
+	}
+	db.Create(settings)
+
+	t.Run("successful image preview", func(t *testing.T) {
+		w := c.Get("/api/file/preview?path=test-image.jpg")
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "image/jpeg", w.Header().Get("Content-Type"))
+		assert.Equal(t, "inline; filename=test-image.jpg", w.Header().Get("Content-Disposition"))
+		assert.Equal(t, imageContent, w.Body.String())
+	})
+
+	t.Run("missing path parameter", func(t *testing.T) {
+		w := c.Get("/api/file/preview")
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "missing file path")
+	})
+
+	t.Run("nonexistent file", func(t *testing.T) {
+		w := c.Get("/api/file/preview?path=nonexistent.jpg")
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "file not found")
+	})
+
+	t.Run("not an image file", func(t *testing.T) {
+		// Create a non-image file
+		textPath := filepath.Join(tempDir, "test.txt")
+		err = ioutil.WriteFile(textPath, []byte("This is a text file"), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create test text file: %v", err)
+		}
+
+		w := c.Get("/api/file/preview?path=test.txt")
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "file is not an image")
+	})
+}
+
+// TestFileStream tests the video streaming functionality
+func TestFileStream(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	// Create a temporary directory for test files
+	tempDir, err := ioutil.TempDir("", "file-stream-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test video file
+	videoContent := "Fake video data for testing MP4 format"
+	videoPath := filepath.Join(tempDir, "test-video.mp4")
+	err = ioutil.WriteFile(videoPath, []byte(videoContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test video: %v", err)
+	}
+
+	// Create settings with the temp directory as download path
+	settings := &models.Settings{
+		UserID:           1,
+		DownloadPath:     tempDir,
+		MaxDownloadSpeed: 1.0,
+		MaxTasks:         10,
+	}
+	db.Create(settings)
+
+	t.Run("successful video stream", func(t *testing.T) {
+		w := c.Get("/api/file/stream?path=test-video.mp4")
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
+		assert.Equal(t, fmt.Sprintf("%d", len(videoContent)), w.Header().Get("Content-Length"))
+		assert.Equal(t, "bytes", w.Header().Get("Accept-Ranges"))
+		assert.Equal(t, videoContent, w.Body.String())
+	})
+
+	t.Run("partial content request", func(t *testing.T) {
+		// Create a request with a range header
+		req, _ := http.NewRequest("GET", "/api/file/stream?path=test-video.mp4", nil)
+		req.Header.Set("Range", "bytes=0-9") // Request first 10 bytes
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusPartialContent, w.Code)
+		assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
+		assert.Equal(t, "10", w.Header().Get("Content-Length"))
+		assert.Equal(t, fmt.Sprintf("bytes 0-9/%d", len(videoContent)), w.Header().Get("Content-Range"))
+		assert.Equal(t, videoContent[:10], w.Body.String())
+	})
+
+	t.Run("missing path parameter", func(t *testing.T) {
+		w := c.Get("/api/file/stream")
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "missing file path")
+	})
+
+	t.Run("nonexistent file", func(t *testing.T) {
+		w := c.Get("/api/file/stream?path=nonexistent.mp4")
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "file not found")
+	})
+
+	t.Run("not a video file", func(t *testing.T) {
+		// Create a non-video file
+		textPath := filepath.Join(tempDir, "test.txt")
+		err = ioutil.WriteFile(textPath, []byte("This is a text file"), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create test text file: %v", err)
+		}
+
+		w := c.Get("/api/file/stream?path=test.txt")
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "file is not a video")
+	})
+
+	t.Run("invalid range request", func(t *testing.T) {
+		// Create a request with an invalid range header
+		req, _ := http.NewRequest("GET", "/api/file/stream?path=test-video.mp4", nil)
+		req.Header.Set("Range", "bytes=invalid-range")
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusRequestedRangeNotSatisfiable, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid range header format")
+	})
+
+	t.Run("range start beyond file size", func(t *testing.T) {
+		// Create a request with a range start beyond the file size
+		req, _ := http.NewRequest("GET", "/api/file/stream?path=test-video.mp4", nil)
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", len(videoContent)+100))
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusRequestedRangeNotSatisfiable, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid range header format")
+	})
 }

@@ -3,10 +3,12 @@ package handlers
 import (
 	"HTTP-download-server/server/models"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -220,4 +222,288 @@ func sortFileList(files []FileInfo, sortBy, order string) {
 			return strings.ToLower(files[i].FileName) < strings.ToLower(files[j].FileName)
 		}
 	})
+}
+
+// handleFilePreview handles requests to preview image files
+func (h *Handlers) handleFilePreview(c *gin.Context) {
+	// Get the file path from the query string
+	filePath := c.Query("path")
+	if filePath == "" {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("missing file path"))
+		return
+	}
+
+	// Get settings to obtain the download path
+	settings, err := models.GetSettings(h.db, 1) // Using default user ID 1
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Determine the full path to the file
+	basePath := settings.DownloadPath
+	fullPath := filepath.Join(basePath, filePath)
+
+	// Verify that the file exists and is not a directory
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			carrot.AbortWithJSONError(c, http.StatusNotFound, fmt.Errorf("file not found: %s", fullPath))
+			return
+		}
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	if fileInfo.IsDir() {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("cannot preview a directory"))
+		return
+	}
+
+	// Check if the file is an image based on extension
+	ext := strings.ToLower(filepath.Ext(fullPath))
+	if !isImageFile(ext) {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("file is not an image: %s", ext))
+		return
+	}
+
+	// Set appropriate content type based on file extension
+	contentType := getContentType(ext)
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%s", filepath.Base(fullPath)))
+
+	// Serve the file
+	c.File(fullPath)
+}
+
+// isImageFile checks if a file extension belongs to an image format
+func isImageFile(ext string) bool {
+	ext = strings.TrimPrefix(ext, ".")
+	return containsString([]string{"jpg", "jpeg", "png", "gif", "webp", "bmp"}, ext)
+}
+
+// getContentType returns the appropriate content type for an image based on its extension
+func getContentType(ext string) string {
+	switch strings.ToLower(strings.TrimPrefix(ext, ".")) {
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "webp":
+		return "image/webp"
+	case "bmp":
+		return "image/bmp"
+	case "mp4":
+		return "video/mp4"
+	case "webm":
+		return "video/webm"
+	case "ogg":
+		return "video/ogg"
+	case "mov":
+		return "video/quicktime"
+	case "avi":
+		return "video/x-msvideo"
+	case "mkv":
+		return "video/x-matroska"
+	case "flv":
+		return "video/x-flv"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// isVideoFile checks if a file extension belongs to a video format
+func isVideoFile(ext string) bool {
+	ext = strings.TrimPrefix(ext, ".")
+	return containsString([]string{"mp4", "webm", "ogg", "mov", "avi", "mkv", "flv"}, ext)
+}
+
+// handleFileStream handles requests to stream video files
+func (h *Handlers) handleFileStream(c *gin.Context) {
+	// Get the file path from the query string
+	filePath := c.Query("path")
+	if filePath == "" {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("missing file path"))
+		return
+	}
+
+	// Get settings to obtain the download path
+	settings, err := models.GetSettings(h.db, 1) // Using default user ID 1
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Determine the full path to the file
+	basePath := settings.DownloadPath
+	fullPath := filepath.Join(basePath, filePath)
+
+	// Verify that the file exists and is not a directory
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			carrot.AbortWithJSONError(c, http.StatusNotFound, fmt.Errorf("file not found: %s", fullPath))
+			return
+		}
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	if fileInfo.IsDir() {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("cannot stream a directory"))
+		return
+	}
+
+	// Check if the file is a video based on extension
+	ext := strings.ToLower(filepath.Ext(fullPath))
+	if !isVideoFile(ext) {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("file is not a video: %s", ext))
+		return
+	}
+
+	// Set appropriate content type based on file extension
+	contentType := getContentType(ext)
+	c.Header("Content-Type", contentType)
+
+	// Support for range requests (important for video streaming)
+	file, err := os.Open(fullPath)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+	defer file.Close()
+
+	// Get file size
+	fileSize := fileInfo.Size()
+
+	// Parse range header
+	rangeHeader := c.GetHeader("Range")
+	if rangeHeader != "" {
+		// Parse the range header
+		ranges, err := parseRange(rangeHeader, fileSize)
+		if err != nil {
+			c.Header("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+			carrot.AbortWithJSONError(c, http.StatusRequestedRangeNotSatisfiable, err)
+			return
+		}
+
+		// We only support a single range for now
+		if len(ranges) > 1 {
+			c.Header("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+			carrot.AbortWithJSONError(c, http.StatusRequestedRangeNotSatisfiable, fmt.Errorf("multiple ranges not supported"))
+			return
+		}
+
+		// Get the range
+		ra := ranges[0]
+
+		// Set content length
+		c.Header("Content-Length", fmt.Sprintf("%d", ra.length))
+		c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", ra.start, ra.start+ra.length-1, fileSize))
+		c.Header("Accept-Ranges", "bytes")
+		c.Status(http.StatusPartialContent)
+
+		// Seek to the start position
+		_, err = file.Seek(ra.start, io.SeekStart)
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		// Copy the specified range to the response
+		_, err = io.CopyN(c.Writer, file, ra.length)
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		// No range requested, send the entire file
+		c.Header("Content-Length", fmt.Sprintf("%d", fileSize))
+		c.Header("Accept-Ranges", "bytes")
+		c.Status(http.StatusOK)
+		_, err = io.Copy(c.Writer, file)
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+}
+
+// httpRange specifies the byte range to be sent to the client
+type httpRange struct {
+	start  int64
+	length int64
+}
+
+// parseRange parses a Range header string as per RFC 7233
+func parseRange(s string, size int64) ([]httpRange, error) {
+	// Format: "bytes=0-499" or "bytes=500-"
+	const b = "bytes="
+	if !strings.HasPrefix(s, b) {
+		return nil, fmt.Errorf("invalid range header format: %s", s)
+	}
+
+	ranges := []httpRange{}
+	rangeSpecs := strings.Split(s[len(b):], ",")
+
+	for _, rangeSpec := range rangeSpecs {
+		rangeSpec = strings.TrimSpace(rangeSpec)
+		if rangeSpec == "" {
+			continue
+		}
+
+		i := strings.Index(rangeSpec, "-")
+		if i < 0 {
+			return nil, fmt.Errorf("invalid range header format: %s", s)
+		}
+
+		start, end := strings.TrimSpace(rangeSpec[:i]), strings.TrimSpace(rangeSpec[i+1:])
+
+		var r httpRange
+
+		// Parse start
+		if start == "" {
+			// No start specified, e.g. "-500" means the last 500 bytes
+			i, err := strconv.ParseInt(end, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid range header format: %s", s)
+			}
+			if i > size {
+				i = size
+			}
+			r.start = size - i
+			r.length = size - r.start
+		} else {
+			// Start specified, e.g. "500-" or "500-999"
+			i, err := strconv.ParseInt(start, 10, 64)
+			if err != nil || i >= size {
+				return nil, fmt.Errorf("invalid range header format: %s", s)
+			}
+			r.start = i
+			if end == "" {
+				// No end specified, e.g. "500-", means to the end of the file
+				r.length = size - r.start
+			} else {
+				// End specified, e.g. "500-999"
+				i, err := strconv.ParseInt(end, 10, 64)
+				if err != nil || r.start > i {
+					return nil, fmt.Errorf("invalid range header format: %s", s)
+				}
+				if i >= size {
+					i = size - 1
+				}
+				r.length = i - r.start + 1
+			}
+		}
+
+		ranges = append(ranges, r)
+	}
+
+	if len(ranges) == 0 {
+		return nil, fmt.Errorf("invalid range header format: %s", s)
+	}
+
+	return ranges, nil
 }

@@ -20,6 +20,12 @@
                 sort: '',
                 order: 'up',
                 currentPageColor: '',
+                showImagePreview: false,
+                previewImageSrc: '',
+                previewImageName: '',
+                showVideoPlayer: false,
+                videoSrc: '',
+                videoName: '',
                 async initData() {
                     this.currentPageColor = document.body.getAttribute('data-page-type')
                     this.fetchList()
@@ -65,6 +71,12 @@
                         this.filePath.push(file.fileName)
                         this.files = await fetchFileList(data)
                         console.log('导航到目录:', path, '文件列表:', this.files)
+                    } else if (file && this.isImageFile(file.fileType)) {
+                        // 预览图片
+                        this.previewImage(file)
+                    } else if (file && this.isVideoFile(file.fileType)) {
+                        // 播放视频
+                        this.playVideo(file)
                     }
                 },
                 async goBack(path) {
@@ -94,6 +106,42 @@
                         return (size / 1024 / 1024 / 1024).toFixed(2) + 'GB'
                     }
                 },
+                isImageFile(fileType) {
+                    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(fileType.toLowerCase())
+                },
+                isVideoFile(fileType) {
+                    return ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'flv'].includes(fileType.toLowerCase())
+                },
+                async previewImage(file) {
+                    // 构建图片路径 - 使用基础路径和文件路径
+                    const settings = await fetchSettings()
+                    const basePath = settings.downloadPath || ''
+                    const filePath = file.filePath
+                    
+                    // 设置预览图片的URL和名称
+                    this.previewImageSrc = `${BASE_URL}/api/file/preview?path=${encodeURIComponent(filePath)}`
+                    this.previewImageName = file.fileName
+                    this.showImagePreview = true
+                },
+                async playVideo(file) {
+                    // 构建视频路径
+                    const filePath = file.filePath
+                    
+                    // 设置视频URL和名称
+                    this.videoSrc = `${BASE_URL}/api/file/stream?path=${encodeURIComponent(filePath)}`
+                    this.videoName = file.fileName
+                    this.showVideoPlayer = true
+                },
+                closePreview() {
+                    this.showImagePreview = false
+                    this.previewImageSrc = ''
+                    this.previewImageName = ''
+                },
+                closeVideoPlayer() {
+                    this.showVideoPlayer = false
+                    this.videoSrc = ''
+                    this.videoName = ''
+                }
             }
         }
     </script>
@@ -239,7 +287,7 @@
                                             <td
                                                 class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-800 sm:pl-0">
                                                 <div class="flex items-center space-x-2 w-auto"
-                                                    :class="file.directory ? 'cursor-pointer hover:text-indigo-600' : 'cursor-default'"
+                                                    :class="file.directory ? 'cursor-pointer hover:text-indigo-600' : ((isImageFile(file.fileType) || isVideoFile(file.fileType)) ? 'cursor-pointer hover:text-indigo-600' : 'cursor-default')"
                                                     @click="goFile(file)">
                                                     <template x-if="file.directory">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none"
@@ -249,7 +297,23 @@
                                                                 d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                                                         </svg>
                                                     </template>
-                                                    <template x-if="!file.directory">
+                                                    <template x-if="!file.directory && isVideoFile(file.fileType)">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" 
+                                                            viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" 
+                                                            class="w-6 h-6 text-red-400 hover:text-red-500">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" 
+                                                                d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                                                        </svg>
+                                                    </template>
+                                                    <template x-if="!file.directory && isImageFile(file.fileType)">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" 
+                                                            viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" 
+                                                            class="w-6 h-6 text-blue-400 hover:text-blue-500">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" 
+                                                                d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                                                        </svg>
+                                                    </template>
+                                                    <template x-if="!file.directory && !isImageFile(file.fileType) && !isVideoFile(file.fileType)">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" 
                                                             viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" 
                                                             class="w-6 h-6 text-gray-400">
@@ -279,6 +343,70 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+    
+    <!-- 图片预览模态框 -->
+    <div x-show="showImagePreview" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="relative bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <!-- 模态框头部 -->
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-900" x-text="previewImageName"></h3>
+                <button @click="closePreview" class="text-gray-400 hover:text-gray-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <!-- 图片容器 -->
+            <div class="p-6 flex-grow overflow-auto flex items-center justify-center">
+                <img :src="previewImageSrc" alt="预览图片" class="max-w-full max-h-[70vh] object-contain" />
+            </div>
+            <!-- 模态框底部 -->
+            <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+                <button @click="closePreview" class="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 视频播放模态框 -->
+    <div x-show="showVideoPlayer" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="relative bg-gray-900 rounded-lg max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <!-- 模态框头部 -->
+            <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-white" x-text="videoName"></h3>
+                <button @click="closeVideoPlayer" class="text-gray-400 hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <!-- 视频播放器容器 -->
+            <div class="p-6 flex-grow overflow-auto flex items-center justify-center bg-black">
+                <video :src="videoSrc" class="max-w-full max-h-[70vh]" controls autoplay controlsList="nodownload">
+                    您的浏览器不支持HTML5视频播放器
+                </video>
+            </div>
+            <!-- 模态框底部 -->
+            <div class="px-6 py-4 border-t border-gray-700 flex justify-end">
+                <button @click="closeVideoPlayer" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                    关闭
+                </button>
+            </div>
         </div>
     </div>
 </body>
