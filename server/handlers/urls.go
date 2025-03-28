@@ -38,6 +38,8 @@ func (h *Handlers) Register(engine *gin.Engine) {
 	r.POST("/task/restart", h.handleRestart)
 	r.POST("/task/delete", h.handleDelete)
 
+	r.POST("/file/list", h.handleFileList)
+
 	r.GET("/event/:key", h.handleSSE)
 	apidocs.RegisterHandler(engine.Group("/api/docs"), h.GetDocs(), nil)
 }

@@ -20,16 +20,20 @@ async function saveSettings(params) {
 }
 
 // get file list
-// async function fetchFileList(params,fileName) {
-//     const resp = await fetch(BASE_URL + "/api/file/list?fileName="+fileName, {
-//         method: "POST",
-//         headers: {
-//             "Content-Type":"application/json"
-//         },
-//         body:JSON.stringify({"type":params.type,"sort":params.sort,"order":params.order})
-//     })
-//     const data = await resp.json()
-//     console.log('data:',data);
-//     return data.data;
-// }
+async function fetchFileList(params, path = "") {
+    const resp = await fetch(`${BASE_URL}/api/file/list`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            "path": params.path || path,
+            "type": params.type,
+            "sort": params.sort,
+            "order": params.order
+        })
+    })
+    const data = await resp.json()
+    return data.data;
+}
 
