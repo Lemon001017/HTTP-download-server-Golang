@@ -41,6 +41,8 @@ func (h *Handlers) Register(engine *gin.Engine) {
 	r.POST("/file/list", h.handleFileList)
 	r.GET("/file/preview", h.handleFilePreview)
 	r.GET("/file/stream", h.handleFileStream)
+	r.POST("/file/rename", h.handleFileRename)
+	r.POST("/file/delete", h.handleFileDelete)
 
 	r.GET("/event/:key", h.handleSSE)
 	apidocs.RegisterHandler(engine.Group("/api/docs"), h.GetDocs(), nil)

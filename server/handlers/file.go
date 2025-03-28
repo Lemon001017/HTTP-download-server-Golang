@@ -35,6 +35,17 @@ type FileListRequest struct {
 	Order string `json:"order"`
 }
 
+// FileRenameRequest represents the request parameters for renaming a file
+type FileRenameRequest struct {
+	Path    string `json:"path" binding:"required"`    // Current file path
+	NewName string `json:"newName" binding:"required"` // New file name
+}
+
+// FileDeleteRequest represents the request parameters for deleting a file
+type FileDeleteRequest struct {
+	Path string `json:"path" binding:"required"` // Path to the file to delete
+}
+
 // HandleFileList handles the request to list files in a directory
 func (h *Handlers) handleFileList(c *gin.Context) {
 	var request FileListRequest
@@ -506,4 +517,120 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 	}
 
 	return ranges, nil
+}
+
+// handleFileRename handles the request to rename a file
+func (h *Handlers) handleFileRename(c *gin.Context) {
+	var request FileRenameRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	// Get settings to obtain the download path
+	settings, err := models.GetSettings(h.db, 1) // Using default user ID 1
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Determine the full path of the file to be renamed
+	basePath := settings.DownloadPath
+	sourcePath := filepath.Join(basePath, request.Path)
+
+	// Check if the file exists
+	_, err = os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			carrot.AbortWithJSONError(c, http.StatusNotFound, fmt.Errorf("file not found: %s", sourcePath))
+			return
+		}
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get directory of the file
+	dir := filepath.Dir(request.Path)
+
+	// Determine the destination path with the new filename
+	destPath := filepath.Join(basePath, dir, request.NewName)
+
+	// Check if the destination already exists
+	_, err = os.Stat(destPath)
+	if err == nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("destination already exists: %s", destPath))
+		return
+	}
+
+	// Rename the file
+	err = os.Rename(sourcePath, destPath)
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, fmt.Errorf("failed to rename file: %v", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "File renamed successfully",
+		"newPath": filepath.Join(dir, request.NewName),
+	})
+}
+
+// handleFileDelete handles the request to delete a file
+func (h *Handlers) handleFileDelete(c *gin.Context) {
+	var request FileDeleteRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	// Get settings to obtain the download path
+	settings, err := models.GetSettings(h.db, 1) // Using default user ID 1
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Determine the full path of the file to delete
+	basePath := settings.DownloadPath
+	fullPath := filepath.Join(basePath, request.Path)
+
+	// Get file info to check if it's a directory
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			carrot.AbortWithJSONError(c, http.StatusNotFound, fmt.Errorf("file not found: %s", fullPath))
+			return
+		}
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Delete the file or directory
+	var deleteErr error
+	if fileInfo.IsDir() {
+		// Check if directory is empty
+		entries, err := os.ReadDir(fullPath)
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		if len(entries) > 0 {
+			carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("directory is not empty: %s", fullPath))
+			return
+		}
+
+		deleteErr = os.Remove(fullPath) // Remove empty directory
+	} else {
+		deleteErr = os.Remove(fullPath) // Remove file
+	}
+
+	if deleteErr != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, fmt.Errorf("failed to delete: %v", deleteErr))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "File deleted successfully",
+	})
 }

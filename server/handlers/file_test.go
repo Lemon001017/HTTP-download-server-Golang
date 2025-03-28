@@ -309,3 +309,233 @@ func TestFileStream(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "invalid range header format")
 	})
 }
+
+// TestFileRename tests the file renaming functionality
+func TestFileRename(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	// Create a temporary directory for test files
+	tempDir, err := ioutil.TempDir("", "file-rename-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test file
+	testFilePath := filepath.Join(tempDir, "test-file.txt")
+	err = ioutil.WriteFile(testFilePath, []byte("Test file content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create test subdirectory
+	subDir := filepath.Join(tempDir, "subdir")
+	err = os.Mkdir(subDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create test subdirectory: %v", err)
+	}
+
+	// Create a file in the subdirectory
+	subFilePath := filepath.Join(subDir, "sub-test-file.txt")
+	err = ioutil.WriteFile(subFilePath, []byte("Subdirectory test file content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file in subdirectory: %v", err)
+	}
+
+	// Create settings with the temp directory as download path
+	settings := &models.Settings{
+		UserID:           1,
+		DownloadPath:     tempDir,
+		MaxDownloadSpeed: 1.0,
+		MaxTasks:         10,
+	}
+	db.Create(settings)
+
+	t.Run("successful rename", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileRenameRequest{
+			Path:    "test-file.txt",
+			NewName: "renamed-file.txt",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/rename", body)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "File renamed successfully")
+
+		// Verify the file has been renamed
+		_, err = os.Stat(filepath.Join(tempDir, "renamed-file.txt"))
+		assert.NoError(t, err)
+		_, err = os.Stat(filepath.Join(tempDir, "test-file.txt"))
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("rename file in subdirectory", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileRenameRequest{
+			Path:    filepath.Join("subdir", "sub-test-file.txt"),
+			NewName: "renamed-subfile.txt",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/rename", body)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "File renamed successfully")
+
+		// Verify the file has been renamed
+		_, err = os.Stat(filepath.Join(subDir, "renamed-subfile.txt"))
+		assert.NoError(t, err)
+		_, err = os.Stat(filepath.Join(subDir, "sub-test-file.txt"))
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("file not found", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileRenameRequest{
+			Path:    "nonexistent-file.txt",
+			NewName: "new-name.txt",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/rename", body)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "file not found")
+	})
+
+	t.Run("invalid request", func(t *testing.T) {
+		// Invalid JSON
+		w := c.Post("POST", "/api/file/rename", []byte(`{"invalid_json":`))
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+// TestFileDelete tests the file deletion functionality
+func TestFileDelete(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	// Create a temporary directory for test files
+	tempDir, err := ioutil.TempDir("", "file-delete-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test file
+	testFilePath := filepath.Join(tempDir, "test-file.txt")
+	err = ioutil.WriteFile(testFilePath, []byte("Test file content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create empty test directory
+	emptyDir := filepath.Join(tempDir, "empty-dir")
+	err = os.Mkdir(emptyDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create empty test directory: %v", err)
+	}
+
+	// Create non-empty test directory
+	nonEmptyDir := filepath.Join(tempDir, "non-empty-dir")
+	err = os.Mkdir(nonEmptyDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create non-empty test directory: %v", err)
+	}
+
+	// Create a file in the non-empty directory
+	nonEmptyFilePath := filepath.Join(nonEmptyDir, "file.txt")
+	err = ioutil.WriteFile(nonEmptyFilePath, []byte("Non-empty directory test file"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file in non-empty directory: %v", err)
+	}
+
+	// Create settings with the temp directory as download path
+	settings := &models.Settings{
+		UserID:           1,
+		DownloadPath:     tempDir,
+		MaxDownloadSpeed: 1.0,
+		MaxTasks:         10,
+	}
+	db.Create(settings)
+
+	t.Run("successful file delete", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileDeleteRequest{
+			Path: "test-file.txt",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/delete", body)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "File deleted successfully")
+
+		// Verify the file has been deleted
+		_, err = os.Stat(testFilePath)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("successful empty directory delete", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileDeleteRequest{
+			Path: "empty-dir",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/delete", body)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "File deleted successfully")
+
+		// Verify the directory has been deleted
+		_, err = os.Stat(emptyDir)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("non-empty directory delete error", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileDeleteRequest{
+			Path: "non-empty-dir",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/delete", body)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "directory is not empty")
+
+		// Verify the directory still exists
+		_, err = os.Stat(nonEmptyDir)
+		assert.NoError(t, err)
+	})
+
+	t.Run("file not found", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileDeleteRequest{
+			Path: "nonexistent-file.txt",
+		}
+		body, err := json.Marshal(requestBody)
+		assert.NoError(t, err)
+
+		// Send the request
+		w := c.Post("POST", "/api/file/delete", body)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "file not found")
+	})
+
+	t.Run("invalid request", func(t *testing.T) {
+		// Invalid JSON
+		w := c.Post("POST", "/api/file/delete", []byte(`{"invalid_json":`))
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}

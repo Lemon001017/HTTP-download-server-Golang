@@ -37,3 +37,34 @@ async function fetchFileList(params, path = "") {
     return data.data;
 }
 
+// rename file
+async function renameFile(path, newName) {
+    const resp = await fetch(`${BASE_URL}/api/file/rename`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            "path": path,
+            "newName": newName
+        })
+    })
+    const data = await resp.json()
+    return data;
+}
+
+// delete file
+async function deleteFile(path) {
+    const resp = await fetch(`${BASE_URL}/api/file/delete`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            "path": path
+        })
+    })
+    const data = await resp.json()
+    return data;
+}
+
