@@ -68,3 +68,37 @@ async function deleteFile(path) {
     return data;
 }
 
+// create directory
+async function createDirectory(path, dirName) {
+    const resp = await fetch(`${BASE_URL}/api/file/mkdir`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            "path": path,
+            "dirName": dirName
+        })
+    })
+    const data = await resp.json()
+    return data;
+}
+
+// search files
+async function searchFiles(path, query, exact = false, recursive = true) {
+    const resp = await fetch(`${BASE_URL}/api/file/search`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            "path": path,
+            "query": query,
+            "exact": exact,
+            "recursive": recursive
+        })
+    })
+    const data = await resp.json()
+    return data.data;
+}
+

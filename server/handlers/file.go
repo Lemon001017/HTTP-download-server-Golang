@@ -46,6 +46,20 @@ type FileDeleteRequest struct {
 	Path string `json:"path" binding:"required"` // Path to the file to delete
 }
 
+// FileMkdirRequest represents the request parameters for creating a directory
+type FileMkdirRequest struct {
+	Path    string `json:"path" binding:"required"`    // Parent directory path
+	DirName string `json:"dirName" binding:"required"` // Name of the new directory
+}
+
+// FileSearchRequest represents the request parameters for searching files
+type FileSearchRequest struct {
+	Path      string `json:"path"`                     // Directory path to search in
+	Query     string `json:"query" binding:"required"` // Search query
+	Exact     bool   `json:"exact"`                    // Whether to perform exact match or fuzzy search
+	Recursive bool   `json:"recursive"`                // Whether to search recursively
+}
+
 // HandleFileList handles the request to list files in a directory
 func (h *Handlers) handleFileList(c *gin.Context) {
 	var request FileListRequest
@@ -633,4 +647,230 @@ func (h *Handlers) handleFileDelete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "File deleted successfully",
 	})
+}
+
+// handleFileMkdir handles the request to create a new directory
+func (h *Handlers) handleFileMkdir(c *gin.Context) {
+	var request FileMkdirRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	// Get settings to obtain the base download path
+	settings, err := models.GetSettings(h.db, 1) // Using default user ID 1
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Clean and validate the path
+	basePath := settings.DownloadPath
+	parentPath := strings.TrimPrefix(request.Path, "/")
+	if parentPath == "" {
+		parentPath = "."
+	}
+
+	// Construct the full path for the new directory
+	fullParentPath := filepath.Join(basePath, parentPath)
+
+	// Check if parent directory exists
+	parentInfo, err := os.Stat(fullParentPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			carrot.AbortWithJSONError(c, http.StatusNotFound, fmt.Errorf("parent directory not found: %s", fullParentPath))
+			return
+		}
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Make sure the parent path is indeed a directory
+	if !parentInfo.IsDir() {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("not a directory: %s", fullParentPath))
+		return
+	}
+
+	// Create the new directory
+	newDirName := request.DirName
+	if newDirName == "" {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("directory name cannot be empty"))
+		return
+	}
+
+	// Check for invalid characters in directory name
+	if strings.ContainsAny(newDirName, "\\/:*?\"<>|") {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("directory name contains invalid characters"))
+		return
+	}
+
+	// Create the full path for the new directory
+	newDirPath := filepath.Join(fullParentPath, newDirName)
+
+	// Check if the directory already exists
+	if _, err := os.Stat(newDirPath); err == nil {
+		carrot.AbortWithJSONError(c, http.StatusConflict, fmt.Errorf("directory already exists: %s", newDirName))
+		return
+	}
+
+	// Create the directory
+	if err := os.Mkdir(newDirPath, 0755); err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Calculate the relative path for the response
+	relativePath := filepath.Join(parentPath, newDirName)
+	if parentPath == "." {
+		relativePath = newDirName
+	}
+
+	// Return success response
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Directory created successfully",
+		"path":    relativePath,
+	})
+}
+
+// handleFileSearch handles file search requests
+func (h *Handlers) handleFileSearch(c *gin.Context) {
+	var request FileSearchRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	// Get settings to obtain the base download path
+	settings, err := models.GetSettings(h.db, 1) // Using default user ID 1
+	if err != nil {
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Clean and validate the path
+	basePath := settings.DownloadPath
+	searchPath := strings.TrimPrefix(request.Path, "/")
+	fullSearchPath := basePath
+	if searchPath != "" {
+		fullSearchPath = filepath.Join(basePath, searchPath)
+	}
+
+	// Ensure the search path exists and is a directory
+	pathInfo, err := os.Stat(fullSearchPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			carrot.AbortWithJSONError(c, http.StatusNotFound, fmt.Errorf("search path not found: %s", fullSearchPath))
+			return
+		}
+		carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	if !pathInfo.IsDir() {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("search path is not a directory: %s", fullSearchPath))
+		return
+	}
+
+	// Normalize the search query
+	query := strings.TrimSpace(strings.ToLower(request.Query))
+	if query == "" {
+		carrot.AbortWithJSONError(c, http.StatusBadRequest, fmt.Errorf("search query cannot be empty"))
+		return
+	}
+
+	// Perform the search
+	results := []FileInfo{} // 初始化为空数组而不是nil
+	if request.Recursive {
+		err = filepath.Walk(fullSearchPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // Skip files with errors
+			}
+
+			// Skip hidden files
+			if strings.HasPrefix(filepath.Base(path), ".") {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			// Check if this file matches the search criteria
+			if isFileMatch(info.Name(), query, request.Exact) {
+				fileInfo := createFileInfo(path, info, basePath)
+				results = append(results, fileInfo)
+			}
+
+			return nil
+		})
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		// Non-recursive search only looks at immediate files in the directory
+		files, err := os.ReadDir(fullSearchPath)
+		if err != nil {
+			carrot.AbortWithJSONError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		for _, file := range files {
+			// Skip hidden files
+			if strings.HasPrefix(file.Name(), ".") {
+				continue
+			}
+
+			// Check if this file matches the search criteria
+			if isFileMatch(file.Name(), query, request.Exact) {
+				info, err := file.Info()
+				if err != nil {
+					continue
+				}
+				filePath := filepath.Join(fullSearchPath, file.Name())
+				fileInfo := createFileInfo(filePath, info, basePath)
+				results = append(results, fileInfo)
+			}
+		}
+	}
+
+	// Return the search results
+	c.JSON(http.StatusOK, gin.H{
+		"data": results,
+	})
+}
+
+// isFileMatch checks if a filename matches the search query
+func isFileMatch(filename, query string, exactMatch bool) bool {
+	filename = strings.ToLower(filename)
+
+	if exactMatch {
+		return filename == query
+	}
+
+	return strings.Contains(filename, query)
+}
+
+// createFileInfo creates a FileInfo struct from file information
+func createFileInfo(filePath string, info os.FileInfo, basePath string) FileInfo {
+	// Get the relative path from the base path
+	relPath, _ := filepath.Rel(basePath, filePath)
+	// Normalize slashes for web interface
+	relPath = filepath.ToSlash(relPath)
+
+	// Create file info
+	fileInfo := FileInfo{
+		FileName:    info.Name(),
+		FilePath:    relPath,
+		Directory:   info.IsDir(),
+		GmtModified: info.ModTime(),
+	}
+
+	// Set file type and size for non-directories
+	if !info.IsDir() {
+		fileInfo.Size = info.Size()
+		fileInfo.FileSize = formatFileSize(info.Size())
+		fileInfo.FileType = strings.TrimPrefix(strings.ToLower(filepath.Ext(info.Name())), ".")
+	}
+
+	return fileInfo
 }

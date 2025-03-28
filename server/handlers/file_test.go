@@ -539,3 +539,365 @@ func TestFileDelete(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
+
+// TestFileMkdir tests the directory creation functionality
+func TestFileMkdir(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	// Create a temporary directory for testing
+	tempDir, err := ioutil.TempDir("", "file-mkdir-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create settings with the temp directory as download path
+	settings := &models.Settings{
+		UserID:           1,
+		DownloadPath:     tempDir,
+		MaxDownloadSpeed: 1.0,
+		MaxTasks:         10,
+	}
+	db.Create(settings)
+
+	t.Run("successful directory creation", func(t *testing.T) {
+		// Create JSON request body
+		requestBody := FileMkdirRequest{
+			Path:    "/",
+			DirName: "test-directory",
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/mkdir", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Directory created successfully")
+
+		// Verify directory was created
+		createdDirPath := filepath.Join(tempDir, "test-directory")
+		_, err = os.Stat(createdDirPath)
+		assert.Nil(t, err, "Directory should exist")
+	})
+
+	t.Run("create directory in subdirectory", func(t *testing.T) {
+		// Create a subdirectory first
+		subDir := filepath.Join(tempDir, "parent-dir")
+		err := os.Mkdir(subDir, 0755)
+		assert.Nil(t, err)
+
+		// Create a directory inside the subdirectory
+		requestBody := FileMkdirRequest{
+			Path:    "parent-dir",
+			DirName: "child-dir",
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/mkdir", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		// Verify directory was created
+		createdDirPath := filepath.Join(subDir, "child-dir")
+		_, err = os.Stat(createdDirPath)
+		assert.Nil(t, err, "Subdirectory should exist")
+	})
+
+	t.Run("create directory with invalid name", func(t *testing.T) {
+		requestBody := FileMkdirRequest{
+			Path:    "/",
+			DirName: "test/directory",
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/mkdir", req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "directory name contains invalid characters")
+	})
+
+	t.Run("create directory in nonexistent path", func(t *testing.T) {
+		requestBody := FileMkdirRequest{
+			Path:    "nonexistent-path",
+			DirName: "new-dir",
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/mkdir", req)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "parent directory not found")
+	})
+
+	t.Run("create existing directory", func(t *testing.T) {
+		// First, create a directory
+		dirPath := filepath.Join(tempDir, "existing-dir")
+		err := os.Mkdir(dirPath, 0755)
+		assert.Nil(t, err)
+
+		// Try to create the same directory again
+		requestBody := FileMkdirRequest{
+			Path:    "/",
+			DirName: "existing-dir",
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/mkdir", req)
+		assert.Equal(t, http.StatusConflict, w.Code)
+		assert.Contains(t, w.Body.String(), "directory already exists")
+	})
+
+	t.Run("invalid request", func(t *testing.T) {
+		req := []byte(`{"invalid_json":}`)
+		w := c.Post("POST", "/api/file/mkdir", req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+// TestFileSearch tests the file search functionality
+func TestFileSearch(t *testing.T) {
+	r, db := createTestHandlers()
+	c := carrot.NewTestClient(r)
+
+	// Create a temporary directory for testing
+	tempDir, err := ioutil.TempDir("", "file-search-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test files with specific names for search testing
+	testFiles := map[string]string{
+		filepath.Join(tempDir, "test-file1.txt"):     "Test file 1 content",
+		filepath.Join(tempDir, "test-file2.txt"):     "Test file 2 content",
+		filepath.Join(tempDir, "sample-doc.docx"):    "Sample document content",
+		filepath.Join(tempDir, "important_data.csv"): "CSV data content",
+	}
+
+	for path, content := range testFiles {
+		err := ioutil.WriteFile(path, []byte(content), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create test file %s: %v", path, err)
+		}
+	}
+
+	// Create a subdirectory with more test files
+	subDir := filepath.Join(tempDir, "subdir")
+	err = os.Mkdir(subDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create test subdirectory: %v", err)
+	}
+
+	subFiles := map[string]string{
+		filepath.Join(subDir, "test-subfile1.txt"): "Subdir test file 1 content",
+		filepath.Join(subDir, "test-subfile2.txt"): "Subdir test file 2 content",
+		filepath.Join(subDir, "another-doc.docx"):  "Another document content",
+	}
+
+	for path, content := range subFiles {
+		err := ioutil.WriteFile(path, []byte(content), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create test file %s: %v", path, err)
+		}
+	}
+
+	// Create settings with the temp directory as download path
+	settings := &models.Settings{
+		UserID:           1,
+		DownloadPath:     tempDir,
+		MaxDownloadSpeed: 1.0,
+		MaxTasks:         10,
+	}
+	db.Create(settings)
+
+	t.Run("successful search in current directory", func(t *testing.T) {
+		// Create JSON request body for non-recursive search
+		requestBody := FileSearchRequest{
+			Path:      "",
+			Query:     "test",
+			Exact:     false,
+			Recursive: false,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Nil(t, err)
+
+		data, ok := response["data"].([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(data), "Should find 2 files with 'test' in the name in the root directory")
+	})
+
+	t.Run("recursive search", func(t *testing.T) {
+		// Create JSON request body for recursive search
+		requestBody := FileSearchRequest{
+			Path:      "",
+			Query:     "test",
+			Exact:     false,
+			Recursive: true,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Nil(t, err)
+
+		data, ok := response["data"].([]interface{})
+		assert.True(t, ok)
+		// 因为可能包含临时目录本身，所以测试文件数可能略有不同
+		assert.GreaterOrEqual(t, len(data), 4, "Should find at least 4 files with 'test' in the name including subdirectory")
+	})
+
+	t.Run("exact match search", func(t *testing.T) {
+		// Create JSON request body for exact match search
+		requestBody := FileSearchRequest{
+			Path:      "",
+			Query:     "test-file1.txt",
+			Exact:     true,
+			Recursive: false,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Nil(t, err)
+
+		data, ok := response["data"].([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 1, len(data), "Should find exactly 1 file with the exact name")
+	})
+
+	t.Run("search by extension", func(t *testing.T) {
+		// Create JSON request body to search for docx files
+		requestBody := FileSearchRequest{
+			Path:      "",
+			Query:     ".docx",
+			Exact:     false,
+			Recursive: true,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Nil(t, err)
+
+		data, ok := response["data"].([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(data), "Should find 2 docx files across all directories")
+	})
+
+	t.Run("no_results_search", func(t *testing.T) {
+		// Create JSON request body for a search with no results
+		requestBody := FileSearchRequest{
+			Path:      "",
+			Query:     "nonexistent",
+			Exact:     false,
+			Recursive: true,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Nil(t, err)
+
+		// 修复：检查data字段是否存在
+		_, ok := response["data"]
+		assert.True(t, ok, "Response should contain 'data' field")
+
+		// 空结果可能是空数组 [] 或 null
+		// 两种情况都是有效的，都表示没找到结果
+		if data, ok := response["data"].([]interface{}); ok {
+			// 如果是数组类型，验证长度为0
+			assert.Len(t, data, 0, "Should find no files")
+		} else if response["data"] == nil {
+			// null也是有效的空结果
+			t.Log("Response data is null, which is valid for empty results")
+		} else {
+			t.Log("Response data is neither an array nor null, raw response:", w.Body.String())
+			t.Fail()
+		}
+	})
+
+	t.Run("search in subdirectory", func(t *testing.T) {
+		// Create JSON request body to search within the subdirectory
+		requestBody := FileSearchRequest{
+			Path:      "subdir",
+			Query:     "subfile",
+			Exact:     false,
+			Recursive: false,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Nil(t, err)
+
+		data, ok := response["data"].([]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, 2, len(data), "Should find 2 files with 'subfile' in the name in the subdirectory")
+	})
+
+	t.Run("invalid path", func(t *testing.T) {
+		// Create JSON request body with an invalid path
+		requestBody := FileSearchRequest{
+			Path:      "nonexistent-dir",
+			Query:     "test",
+			Exact:     false,
+			Recursive: false,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "search path not found")
+	})
+
+	t.Run("empty query", func(t *testing.T) {
+		// Create JSON request body with an empty query
+		requestBody := FileSearchRequest{
+			Path:      "",
+			Query:     "  ",
+			Exact:     false,
+			Recursive: false,
+		}
+		req, err := json.Marshal(requestBody)
+		assert.Nil(t, err)
+
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "search query cannot be empty")
+	})
+
+	t.Run("invalid request", func(t *testing.T) {
+		req := []byte(`{"invalid_json":}`)
+		w := c.Post("POST", "/api/file/search", req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}

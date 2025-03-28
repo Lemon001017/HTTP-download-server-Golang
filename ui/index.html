@@ -30,6 +30,14 @@
                 newFileName: '',
                 showDeleteConfirm: false,
                 selectedFile: null,
+                showCreateDirModal: false,
+                newDirName: '',
+                searchQuery: '',
+                isSearching: false,
+                showAdvancedSearch: false,
+                exactMatch: false,
+                recursiveSearch: true,
+                searchResults: [],
                 async initData() {
                     this.currentPageColor = document.body.getAttribute('data-page-type')
                     this.fetchList()
@@ -191,6 +199,68 @@
                         this.fetchList(this.filePath, this.optionValue, this.sort)
                         this.closeDeleteConfirm()
                     }
+                },
+                openCreateDirModal() {
+                    this.showCreateDirModal = true
+                    this.newDirName = ''
+                },
+                closeCreateDirModal() {
+                    this.showCreateDirModal = false
+                    this.newDirName = ''
+                },
+                async createDir() {
+                    if (this.newDirName) {
+                        let path = this.filePath.join('/')
+                        // 确保路径以斜杠开头
+                        if (path && !path.startsWith('/')) {
+                            path = '/' + path
+                        }
+                        // 如果是根目录，确保用空字符串或斜杠
+                        if (path === '' || path === '/') {
+                            path = '/'
+                        }
+                        console.log('Creating directory:', path, this.newDirName)
+                        try {
+                            await createDirectory(path, this.newDirName)
+                            this.fetchList(this.filePath, this.optionValue, this.sort)
+                            this.closeCreateDirModal()
+                        } catch (error) {
+                            console.error('Failed to create directory:', error)
+                            alert('Failed to create directory: ' + (error.message || 'Unknown error'))
+                        }
+                    }
+                },
+                toggleAdvancedSearch() {
+                    this.showAdvancedSearch = !this.showAdvancedSearch
+                },
+                async performSearch() {
+                    if (!this.searchQuery.trim()) {
+                        return
+                    }
+                    
+                    this.isSearching = true
+                    let path = this.filePath.join('/')
+                    try {
+                        const results = await searchFiles(
+                            path, 
+                            this.searchQuery, 
+                            this.exactMatch, 
+                            this.recursiveSearch
+                        )
+                        this.searchResults = results
+                        this.files = results
+                        console.log('Search results:', results)
+                    } catch (error) {
+                        console.error('Search error:', error)
+                    } finally {
+                        this.isSearching = false
+                    }
+                },
+                clearSearch() {
+                    this.searchQuery = ''
+                    this.isSearching = false
+                    this.searchResults = []
+                    this.fetchList(this.filePath, this.optionValue, this.sort)
                 }
             }
         }
@@ -248,13 +318,89 @@
                         </template>
                     </template>
                 </div>
-                <select x-model="optionValue" @change="fetchList(filePath,optionValue)" class="rounded-md">
-                    <option value="">All(*.*)</option>
-                    <option value="Video">Video(*.mp4;*.mov)</option>
-                    <option value="Photo">Photo(*.png;*.jpg;*.gif)</option>
-                    <option value="Archive">Archive(*.zip;*.rar;*.tar)</option>
-                    <option value="Document">Document(*.pptx;*.docx;*.xlsx)</option>
-                </select>
+                <div class="flex justify-between items-center">
+                    <div class="flex space-x-4 items-center">
+                        <div class="flex space-x-1 flex-shrink-0 items-center text-white">
+                            <button @click="openCreateDirModal" class="text-sm bg-blue-500 hover:bg-blue-600 py-1 px-3 rounded flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                </svg>
+                                New Folder
+                            </button>
+                        </div>
+                        
+                        <!-- 搜索框 -->
+                        <div class="flex flex-grow max-w-md">
+                            <div class="relative flex-grow">
+                                <div class="flex">
+                                    <div class="relative w-full">
+                                        <input
+                                            x-model="searchQuery"
+                                            @keyup.enter="performSearch"
+                                            type="text"
+                                            class="block w-full pl-3 pr-10 py-1.5 border border-gray-300 rounded-l-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                            placeholder="Search files..."
+                                        />
+                                        <div class="absolute inset-y-0 right-0 flex items-center pr-2">
+                                            <button @click="toggleAdvancedSearch" class="text-gray-400 hover:text-gray-600">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        @click="performSearch" 
+                                        class="px-3 py-1.5 bg-indigo-600 text-white rounded-r-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        :class="{ 'opacity-75 cursor-not-allowed': isSearching }"
+                                        :disabled="isSearching"
+                                    >
+                                        <span x-show="!isSearching">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                        </span>
+                                        <span x-show="isSearching">
+                                            <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button 
+                                        x-show="searchQuery"
+                                        @click="clearSearch" 
+                                        class="ml-2 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                                
+                                <!-- 高级搜索选项 -->
+                                <div x-show="showAdvancedSearch" class="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-300 p-3">
+                                    <div class="flex flex-col space-y-2">
+                                        <div class="flex items-center">
+                                            <input type="checkbox" id="exact-match" x-model="exactMatch" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                            <label for="exact-match" class="ml-2 block text-sm text-gray-700">Exact Match</label>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <input type="checkbox" id="recursive-search" x-model="recursiveSearch" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                            <label for="recursive-search" class="ml-2 block text-sm text-gray-700">Include Subfolders</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <select x-model="optionValue" @change="fetchList(filePath,optionValue)" class="rounded-md">
+                            <option value="">All(*.*)</option>
+                            <option value="Video">Video(*.mp4;*.mov)</option>
+                            <option value="Photo">Photo(*.png;*.jpg;*.gif)</option>
+                            <option value="Archive">Archive(*.zip;*.rar;*.tar)</option>
+                            <option value="Document">Document(*.pptx;*.docx;*.xlsx)</option>
+                        </select>
+                    </div>
+                </div>
             </div>
             <div class="px-4 sm:px-6 lg:px-8">
                 <div class="mt-8 flow-root">
@@ -527,6 +673,46 @@
                 </button>
                 <button @click="deleteSelectedFile" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
                     Confirm Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建文件夹模态框 -->
+    <div x-show="showCreateDirModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
+            <!-- 模态框头部 -->
+            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Create New Folder</h3>
+            </div>
+            
+            <!-- 模态框内容 -->
+            <div class="px-4 py-5">
+                <div class="mb-4">
+                    <label for="new-dir-name" class="block text-sm font-medium text-gray-700 mb-2">Folder Name</label>
+                    <input 
+                        type="text" 
+                        id="new-dir-name"
+                        x-model="newDirName"
+                        @keyup.enter="createDir"
+                        class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                        placeholder="Enter folder name">
+                </div>
+            </div>
+            
+            <!-- 模态框底部按钮 -->
+            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button @click="createDir" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
+                    Create
+                </button>
+                <button @click="closeCreateDirModal" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                    Cancel
                 </button>
             </div>
         </div>

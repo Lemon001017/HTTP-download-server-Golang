@@ -491,15 +491,15 @@
                     <div
                         class="fixed -top-0 left-0 w-full h-full -bottom-20 bg-gray-800 bg-opacity-50 flex justify-center items-center text-white">
                         <div class="bg-white rounded-xl p-10 text-gray-900 space-y-6 ">
-                            <p class="font-semibold text-lg">确定要删除<span x-text="ids"
-                                    class="text-gray-500 font-medium mx-1"></span>任务吗？
+                            <p class="font-semibold text-lg">Are you sure you want to delete task(s) <span x-text="ids"
+                                    class="text-gray-500 font-medium mx-1"></span>?
                             </p>
                             <div class="flex items-center justify-end space-x-4">
                                 <button class="font-semibold text-white bg-red-500 px-4 py-1 rounded-md"
-                                    @click="removeTask(ids)"> 确认
+                                    @click="removeTask(ids)"> Confirm
                                 </button>
                                 <button class="font-semibold text-gray-900 border px-4 py-1 rounded-md"
-                                    @click="showModal=false"> 取消
+                                    @click="showModal=false"> Cancel
                                 </button>
                             </div>
                         </div>
