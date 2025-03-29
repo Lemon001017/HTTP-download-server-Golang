@@ -41,6 +41,7 @@ func (h *Handlers) Register(engine *gin.Engine) {
 	r.POST("/file/list", h.handleFileList)
 	r.GET("/file/preview", h.handleFilePreview)
 	r.GET("/file/stream", h.handleFileStream)
+	r.GET("/file/stream/:path", h.handleFileStream)
 	r.POST("/file/rename", h.handleFileRename)
 	r.POST("/file/delete", h.handleFileDelete)
 	r.POST("/file/mkdir", h.handleFileMkdir)
